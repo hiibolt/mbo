@@ -1,11 +1,39 @@
+mod datatypes;
+
 use std::path::Path;
 
-use dbn::{
-    decode::{DecodeRecord, dbn::Decoder},
-    record::MboMsg
+use databento::{
+    dbn::{
+        decode::{DecodeRecord, dbn::Decoder, DbnMetadata},
+        MboMsg, SymbolIndex
+    },
+    HistoricalClient,
 };
 use anyhow::{Result, Context, ensure};
 use tracing::info;
+
+use self::datatypes::market::Market;
+
+
+struct Config {
+    dbn_client: HistoricalClient,
+}
+impl Config {
+    fn from_env() -> Result<Self> {
+        let dbn_api_key = std::env::var("DBN_KEY")
+            .context("DBN_KEY environment variable not set")?;
+
+        let dbn_client = HistoricalClient::builder()
+            .key(dbn_api_key)
+            .context("...while building DBN client")?
+            .build()
+            .context("...while building DBN client")?;
+
+        Ok(Self {
+            dbn_client
+        })
+    }
+}
 
 #[tokio::main]
 #[tracing::instrument]
@@ -21,15 +49,43 @@ async fn main() -> Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    // First, check that the file exists
-    let input_file_path = Path::new("assets/CLX5_mbo.dbn");
-    ensure!(input_file_path.exists(), "Input file does not exist at path: `{:?}`", input_file_path);
+    // Initialize configuration from environment variables
+    let _config = Config::from_env()
+        .context("...while loading configuration from environment")?;
 
-    let mut dbn_stream = Decoder::from_file(input_file_path)
+    // First, check that the file exists
+    let input_file_path = {
+        let path = Path::new("assets/CLX5_mbo.dbn");
+        ensure!(path.exists(), "Input file does not exist at path: `{:?}`", path);
+        path
+    };
+
+    let mut dbn_decoder = Decoder::from_file(input_file_path)
         .context("...while trying to open decoder on file")?;
-    
-    while let Some(mbo_msg) = dbn_stream.decode_record::<MboMsg>().context("...while trying to decode record")? {
-        println!("{mbo_msg:?}");
+    let mut market = Market::new();
+    let symbol_map = dbn_decoder.metadata().symbol_map()?;
+    while let Some(mbo_msg) = dbn_decoder.decode_record::<MboMsg>().context("...while trying to decode record")? {
+        market.apply(mbo_msg.clone())
+            .context("...while trying to apply MBO message to market")?;
+
+        // If it's the last update in an event, print the state of the aggregated book
+        if mbo_msg.flags.is_last() {
+            let symbol = symbol_map.get_for_rec(mbo_msg)
+                .context("...while trying to get symbol for MBO message")?;
+            let (best_bid, best_offer) = market.aggregated_bbo(mbo_msg.hd.instrument_id);
+            
+            println!("{symbol} Aggregated BBO | {}", mbo_msg.ts_recv().context("...while trying to get ts_recv")?);
+            if let Some(best_offer) = best_offer {
+                println!("    {best_offer}");
+            } else {
+                println!("    None");
+            }
+            if let Some(best_bid) = best_bid {
+                println!("    {best_bid}");
+            } else {
+                println!("    None");
+            }
+        }
     }
 
     info!("Finished processing DBN file.");
