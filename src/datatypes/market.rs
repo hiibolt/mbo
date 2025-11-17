@@ -79,7 +79,7 @@ impl Market {
 
     pub fn apply(&mut self, mbo: MboMsg) -> Result<()> {
         let publisher = mbo.publisher()
-            .context("Failed to get publisher from MBO message")?;
+            .context("MBO message has no valid publisher")?;
         let books = self.books.entry(mbo.hd.instrument_id).or_default();
         let book = if let Some((_, book)) = books
             .iter_mut()
@@ -89,11 +89,11 @@ impl Market {
         } else {
             books.push((publisher, Book::default()));
             &mut books.last_mut()
-                .context("Failed to get last book after pushing")?
+                .context("Books vector is empty after push")?
                 .1
         };
         book.apply(mbo)
-            .context("Failed to apply MBO message to book")?;
+            .context("...while applying MBO message to book")?;
         Ok(())
     }
 }

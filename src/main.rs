@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
 
     // First, check that the file exists
     let input_file_path = {
-        let path = Path::new("assets/CLX5_mbo.dbn");
+        let path = Path::new("assets/CLX5_mbo.dbn"); // Linux format is ok, `Path` handles it
         ensure!(path.exists(), "Input file does not exist at path: `{:?}`", path);
         path
     };

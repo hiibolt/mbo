@@ -92,7 +92,7 @@ impl Book {
 
     pub fn apply(&mut self, mbo: MboMsg) -> Result<()> {
         let action = mbo.action()
-            .context("Failed to get action from MBO message")?;
+            .context("MBO message has no valid action")?;
         match action {
             Action::Modify => self.modify(mbo)?,
             Action::Trade | Action::Fill | Action::None => {}
@@ -112,7 +112,7 @@ impl Book {
     fn add(&mut self, mbo: MboMsg) -> Result<()> {
         let price = mbo.price;
         let side = mbo.side()
-            .context("Failed to get side from MBO message")?;
+            .context("MBO message has no valid side")?;
         if mbo.flags.is_tob() {
             let levels: &mut BTreeMap<i64, Level> = self.side_levels_mut(side)?;
             levels.clear();
@@ -135,22 +135,22 @@ impl Book {
 
     fn cancel(&mut self, mbo: MboMsg) -> Result<()> {
         let side = mbo.side()
-            .context("Failed to get side from MBO message")?;
+            .context("MBO message has no valid side")?;
         let level = self.level_mut(side, mbo.price)?;
         let order_idx = Self::find_order(level, mbo.order_id)
-            .context("Failed to find order in level")?;
+            .context("...while finding order in level")?;
         let existing_order = level.get_mut(order_idx)
-            .context("Failed to get order at index")?;
+            .context("Order index out of bounds")?;
         assert!(existing_order.size >= mbo.size);
         existing_order.size -= mbo.size;
         if existing_order.size == 0 {
             level.remove(order_idx)
-                .context("Failed to remove order from level")?;
+                .context("Order index out of bounds for removal")?;
             if level.is_empty() {
                 self.remove_level(side, mbo.price)?;
             }
             self.orders_by_id.remove(&mbo.order_id)
-                .context("Failed to remove order from orders_by_id map")?;
+                .context("Order ID not found in orders_by_id map")?;
         }
         Ok(())
     }
@@ -158,7 +158,7 @@ impl Book {
     fn modify(&mut self, mbo: MboMsg) -> Result<()> {
         let order_id = mbo.order_id;
         let side = mbo.side()
-            .context("Failed to get side from MBO message")?;
+            .context("MBO message has no valid side")?;
         let Some((id_side, id_price)) = self.orders_by_id.get_mut(&order_id) else {
             // If order not found, treat it as an add
             return self.add(mbo);
@@ -171,9 +171,9 @@ impl Book {
         // Update level order
         let level = self.level_mut(prev_side, prev_price)?;
         let order_idx = Self::find_order(level, mbo.order_id)
-            .context("Failed to find order in level")?;
+            .context("...while finding order in level")?;
         let existing_order = level.get_mut(order_idx)
-            .context("Failed to get order at index")?;
+            .context("Order index out of bounds")?;
         existing_order.size = mbo.size;
         let should_keep_priority = prev_price == mbo.price && existing_order.size >= mbo.size;
         if should_keep_priority {
@@ -202,26 +202,26 @@ impl Book {
     fn level_mut(&mut self, side: Side, price: i64) -> Result<&mut Level> {
         let levels = self.side_levels_mut(side)?;
         levels.get_mut(&price)
-            .context(format!("Failed to get level at price {}", price))
+            .context(format!("Level not found at price {}", price))
     }
 
     fn remove_level(&mut self, side: Side, price: i64) -> Result<()> {
         self.side_levels_mut(side)?
             .remove(&price)
-            .context(format!("Failed to remove level at price {}", price))?;
+            .context(format!("Level not found at price {}", price))?;
         Ok(())
     }
 
     fn find_order(level: &VecDeque<MboMsg>, order_id: u64) -> Result<usize> {
         level.iter()
             .position(|o| o.order_id == order_id)
-            .context(format!("Failed to find order with ID {}", order_id))
+            .context(format!("Order not found with ID {}", order_id))
     }
 
     fn remove_order(level: &mut VecDeque<MboMsg>, order_id: u64) -> Result<()> {
         let index = Self::find_order(level, order_id)?;
         level.remove(index)
-            .context(format!("Failed to remove order at index {}", index))?;
+            .context(format!("Order not found at index {}", index))?;
         Ok(())
     }
 
