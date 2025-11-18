@@ -6,9 +6,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::instrument;
 
-/// Export full market state as JSON
 #[instrument(skip(state))]
-pub async fn market_export(
+pub async fn handler(
     State(state): State<Arc<RwLock<crate::State>>>,
 ) -> Json<serde_json::Value> {
     let state = state.read().await;

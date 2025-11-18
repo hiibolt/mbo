@@ -1,5 +1,5 @@
-pub mod market_export;
-pub mod mbo_stream;
+pub mod market;
+pub mod mbo;
 
 use axum::{Router, routing::get};
 use std::sync::Arc;
@@ -8,9 +8,8 @@ use crate::State;
 
 pub fn router(state: Arc<RwLock<State>>) -> Router {
     let api_router = Router::new()
-        .route("/market/export", get(market_export::market_export))
-        .route("/mbo/stream", get(mbo_stream::mbo_stream))
-        .route("/mbo/stream/json", get(mbo_stream::mbo_stream_json));
+        .route("/market/export", get(market::export::handler))
+        .route("/mbo/stream/json", get(mbo::stream::json::handler));
 
     Router::new()
         .nest("/api", api_router)

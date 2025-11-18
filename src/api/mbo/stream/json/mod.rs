@@ -6,29 +6,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{instrument, info, error};
 
-/// Stream MBO messages over TCP
-/// This endpoint provides information about TCP streaming
 #[instrument(skip(state))]
-pub async fn mbo_stream(
-    State(state): State<Arc<RwLock<crate::State>>>,
-) -> impl IntoResponse {
-    info!("Client requested MBO stream info");
-    
-    let state = state.read().await;
-    let message_count = state.mbo_messages.len();
-    
-    let response = serde_json::json!({
-        "message": "Use /api/mbo/stream/json for JSON line streaming",
-        "message_count": message_count,
-    });
-    
-    axum::Json(response)
-}
-
-/// Stream MBO messages as newline-delimited JSON using Server-Sent Events
-/// This works well over HTTP and is compatible with Cloudflare tunnels
-#[instrument(skip(state))]
-pub async fn mbo_stream_json(
+pub async fn handler(
     State(state): State<Arc<RwLock<crate::State>>>,
 ) -> impl IntoResponse {
     use axum::response::sse::{Event, Sse};
