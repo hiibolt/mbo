@@ -2,7 +2,11 @@
 > Databento Market Simulation for Batonics built with Rust, Svelte, and Nix.
 
 ## [Application](https://mbo.hiibolt.com)
+<img width="1920" height="940" alt="image" src="https://github.com/user-attachments/assets/a273065a-5269-44e7-aa39-870b115c4de9" />
+
 ## [Monitoring](https://mbo-grafana.hiibolt.com)
+<img width="1919" height="937" alt="image" src="https://github.com/user-attachments/assets/bc86095c-90df-4f9a-964e-c51db7ed597c" />
+
 
 ## Implementation Details
 I chose to do all four major targets and all but one engineering requirement, I had nothing better to do with my day and figured I'd enjoy the rare challenge.
