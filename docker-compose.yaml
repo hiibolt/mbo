@@ -1,34 +1,35 @@
-version: '3.8'
+# Base Docker Compose configuration for MBO project
+# Use profiles to switch between dev (local builds) and prod (GHCR images)
+#
+# Usage:
+#   Dev mode:  docker compose --profile dev up
+#   Prod mode: docker compose --profile prod up
+#   OR use the specific files:
+#     docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up
+#     docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up
 
 services:
   # Backend API service - Market data streaming and order book reconstruction
-  backend:
+  # PROD: Uses pre-built GHCR image
+  backend-prod:
+    profiles: ["prod"]
     image: ghcr.io/hiibolt/mbo-backend:latest
     container_name: mbo-backend
     restart: unless-stopped
 
-    # Environment configuration
     environment:
-      # Server binding
       BIND_ADDRESS: 0.0.0.0:3000
-      # Database configuration - uses persistent volume
       DB_PATH: /app/data/mbo.db
-      # Market data file - included in image at build time
       DBN_FILE_PATH: /app/assets/CLX5_mbo.dbn
-      # Databento API key - REQUIRED, set in .env file
       DBN_KEY: ${DBN_KEY:?DBN_KEY is required}
-      # Logging configuration
       RUST_LOG: ${RUST_LOG:-info}
     
-    # Port mapping - expose backend API
     ports:
       - "3000:3000"
     
-    # Persistent volume for SQLite database
     volumes:
       - mbo-db-data:/app/data
     
-    # Health check configuration
     healthcheck:
       test: ["CMD", "/app/mbo", "--version"]
       interval: 30s
@@ -36,7 +37,6 @@ services:
       start_period: 5s
       retries: 3
     
-    # Resource limits (adjust based on your needs)
     deploy:
       resources:
         limits:
@@ -46,11 +46,51 @@ services:
           cpus: '0.5'
           memory: 512M
     
-    # Networks
     networks:
       - mbo-network
     
-    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Backend API service - DEV: Built locally
+  backend-dev:
+    profiles: ["dev"]
+    build:
+      context: .
+      dockerfile: mbo-backend/Dockerfile
+      tags:
+        - mbo-backend:dev
+    container_name: mbo-backend
+    restart: unless-stopped
+
+    environment:
+      BIND_ADDRESS: 0.0.0.0:3000
+      DB_PATH: /app/data/mbo.db
+      DBN_FILE_PATH: /app/assets/CLX5_mbo.dbn
+      DBN_KEY: ${DBN_KEY:?DBN_KEY is required}
+      RUST_LOG: ${RUST_LOG:-debug}
+    
+    ports:
+      - "3000:3000"
+    
+    volumes:
+      - mbo-db-data:/app/data
+      # Mount source for hot-reload if needed (optional)
+      # - ./mbo-backend/src:/app/src:ro
+    
+    healthcheck:
+      test: ["CMD", "/app/mbo", "--version"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    
+    networks:
+      - mbo-network
+    
     logging:
       driver: "json-file"
       options:
@@ -58,16 +98,16 @@ services:
         max-file: "3"
 
   # Frontend UI service - SvelteKit application
-  frontend:
+  # PROD: Uses pre-built GHCR image
+  frontend-prod:
+    profiles: ["prod"]
     image: ghcr.io/hiibolt/mbo-frontend:latest
     container_name: mbo-frontend
     restart: unless-stopped
     
-    # Port mapping - expose frontend
     ports:
       - "8080:80"
     
-    # Health check configuration
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
@@ -75,12 +115,10 @@ services:
       start_period: 5s
       retries: 3
     
-    # Depends on backend service
     depends_on:
-      backend:
+      backend-prod:
         condition: service_healthy
     
-    # Resource limits
     deploy:
       resources:
         limits:
@@ -90,11 +128,43 @@ services:
           cpus: '0.25'
           memory: 128M
     
-    # Networks
     networks:
       - mbo-network
     
-    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Frontend UI service - DEV: Built locally
+  frontend-dev:
+    profiles: ["dev"]
+    build:
+      context: ./mbo-frontend
+      dockerfile: Dockerfile
+      tags:
+        - mbo-frontend:dev
+    container_name: mbo-frontend
+    restart: unless-stopped
+    
+    ports:
+      - "8080:80"
+    
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    
+    depends_on:
+      backend-dev:
+        condition: service_healthy
+    
+    networks:
+      - mbo-network
+    
     logging:
       driver: "json-file"
       options:
@@ -103,14 +173,11 @@ services:
 
 # Named volumes for persistent data
 volumes:
-  # SQLite database persistent storage
-  # This volume persists across container restarts and updates
   mbo-db-data:
     driver: local
     driver_opts:
       type: none
       o: bind
-      # Update this path to your desired location
       device: ./data
     labels:
       description: "Persistent storage for MBO SQLite database"

@@ -1,0 +1,32 @@
+# Development override for docker-compose.yaml
+# Use local Docker builds instead of GHCR registry images
+#
+# Usage: docker compose -f docker-compose.yaml -f docker-compose.dev.yaml up
+# Or simply: docker compose --profile dev up
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: mbo-backend/Dockerfile
+      tags:
+        - mbo-backend:dev
+    image: mbo-backend:dev
+    environment:
+      RUST_LOG: ${RUST_LOG:-debug}  # More verbose logging for dev
+    # Optional: mount source for development
+    volumes:
+      - mbo-db-data:/app/data
+      # Uncomment to enable live code inspection (read-only)
+      # - ./mbo-backend/src:/build/src:ro
+
+  frontend:
+    build:
+      context: ./mbo-frontend
+      dockerfile: Dockerfile
+      tags:
+        - mbo-frontend:dev
+    image: mbo-frontend:dev
+    # Optional: mount source for development
+    # volumes:
+    #   - ./mbo-frontend/src:/app/src:ro

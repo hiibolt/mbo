@@ -1,0 +1,102 @@
+# Base Docker Compose configuration - shared settings for both dev and prod
+# This file contains common configuration used by both environments
+# Use with docker-compose.dev.yaml or docker-compose.prod.yaml
+
+services:
+  # Backend API service - Market data streaming and order book reconstruction
+  backend:
+    container_name: mbo-backend
+    restart: unless-stopped
+
+    environment:
+      BIND_ADDRESS: 0.0.0.0:3000
+      DB_PATH: /app/data/mbo.db
+      DBN_FILE_PATH: /app/assets/CLX5_mbo.dbn
+      DBN_KEY: ${DBN_KEY:?DBN_KEY is required}
+      RUST_LOG: ${RUST_LOG:-info}
+    
+    ports:
+      - "3000:3000"
+    
+    volumes:
+      - mbo-db-data:/app/data
+    
+    healthcheck:
+      test: ["CMD", "/app/mbo", "--version"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    networks:
+      - mbo-network
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Frontend UI service - SvelteKit application
+  frontend:
+    container_name: mbo-frontend
+    restart: unless-stopped
+    
+    ports:
+      - "8080:80"
+    
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    
+    depends_on:
+      backend:
+        condition: service_healthy
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    
+    networks:
+      - mbo-network
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Named volumes for persistent data
+volumes:
+  mbo-db-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data
+    labels:
+      description: "Persistent storage for MBO SQLite database"
+
+# Networks
+networks:
+  mbo-network:
+    driver: bridge
+    labels:
+      description: "Internal network for MBO services"

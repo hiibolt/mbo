@@ -1,0 +1,18 @@
+# Production override for docker-compose.yaml
+# Use pre-built GHCR registry images
+#
+# Usage: docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up
+# Or simply: docker compose --profile prod up
+
+services:
+  backend:
+    image: ghcr.io/hiibolt/mbo-backend:latest
+    # Pull policy to always get latest image
+    pull_policy: always
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}  # Production logging level
+
+  frontend:
+    image: ghcr.io/hiibolt/mbo-frontend:latest
+    # Pull policy to always get latest image
+    pull_policy: always

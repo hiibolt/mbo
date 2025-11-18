@@ -14,13 +14,13 @@ RUN bun install --frozen-lockfile
 # Copy source code
 COPY . .
 
-# Build the application
+# Build the application (outputs to /build/build with adapter-static)
 RUN bun run build
 
 # Stage 2: Serve with nginx
 FROM nginx:alpine
 
-# Copy built files from builder
+# Copy built static files from builder
 COPY --from=builder /build/build /usr/share/nginx/html
 
 # Copy nginx configuration
