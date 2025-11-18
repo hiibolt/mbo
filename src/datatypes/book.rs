@@ -8,9 +8,10 @@ use databento::{
     },
 };
 use anyhow::{Result, Context, bail, ensure};
-use tracing::{info, warn};
+use tracing::warn;
+use serde::Serialize;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
 pub struct Book {
     orders_by_id: HashMap<u64, (Side, i64)>,
     offers: BTreeMap<i64, Level>,

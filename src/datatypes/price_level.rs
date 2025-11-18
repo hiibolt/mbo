@@ -3,8 +3,9 @@ use databento::{
         pretty, MboMsg,
     },
 };
+use serde::Serialize;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct PriceLevel {
     pub price: i64,
     pub size: u32,

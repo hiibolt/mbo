@@ -6,8 +6,9 @@ use databento::{
     }
 };
 use anyhow::{Result, Context};
+use serde::Serialize;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
 pub struct Market {
     books: HashMap<u32, Vec<(Publisher, Book)>>,
 }
