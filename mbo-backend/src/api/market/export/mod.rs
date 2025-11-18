@@ -12,7 +12,7 @@ use tracing::instrument;
 /// orders, and market data for all instruments and publishers.
 #[utoipa::path(
     get,
-    path = "/api/market/export",
+    path = "/api/market/export/{delay_ms}",
     responses(
         (status = 200, description = "Market state exported successfully", body = serde_json::Value),
         (status = 500, description = "Failed to serialize market state")

@@ -1,10 +1,11 @@
 use axum::{
-    extract::State,
+    extract::{Path, State},
     response::IntoResponse,
 };
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{instrument, info, error};
+
 
 /// Stream MBO messages as Server-Sent Events
 ///
@@ -18,7 +19,7 @@ use tracing::{instrument, info, error};
 /// - Timestamp and sequencing information
 #[utoipa::path(
     get,
-    path = "/api/mbo/stream/json",
+    path = "/api/mbo/stream/json/{delay_ms}",
     responses(
         (status = 200, description = "SSE stream of MBO messages", content_type = "text/event-stream"),
     ),
@@ -27,6 +28,7 @@ use tracing::{instrument, info, error};
 #[instrument(skip(state))]
 pub async fn handler(
     State(state): State<Arc<RwLock<crate::State>>>,
+    Path(delay_ms): Path<u64>
 ) -> impl IntoResponse {
     use axum::response::sse::{Event, Sse};
     use futures::stream::{self, StreamExt};
@@ -71,6 +73,9 @@ pub async fn handler(
     // Create a stream that yields each message as an SSE event
     let stream = stream::iter(mbomsg_effects)
         .map(move |snapshot| {
+            // Sleep for the requested amount
+            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+
             // Increment messages processed counter
             metrics.messages_processed.inc();
             

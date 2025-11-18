@@ -85,7 +85,7 @@ async fn metrics_handler(
 pub fn router(state: Arc<RwLock<State>>) -> Router {
     let api_router = Router::new()
         .route("/market/export", get(market::export::handler))
-        .route("/mbo/stream/json", get(mbo::stream::json::handler))
+        .route("/mbo/stream/json/{delay_ms}", get(mbo::stream::json::handler))
         .with_state(Arc::clone(&state));
 
     Router::new()
