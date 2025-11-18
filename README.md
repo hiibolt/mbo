@@ -7,17 +7,22 @@
 ## Implementation Details
 I chose to do all four major targets and all but one engineering requirement, I had nothing better to do with my day and figured I'd enjoy the rare challenge.
 
+I'd also like to note that document may have used to contain an instruction to allow live data (presumably core requirement #5), and while I would have loved to do it, it's a paid API that requires approval. If you'd like to see this implemented, I designed the database, backend, and frontend with it in the back of my head - all I require is a pre-approved API key.
+
 ### Core Requirements
-1. **Data Streaming**: Stream the MBO file at 50k-500k messages/second over TCP
-(design for scalability)
-    - This was pretty easy thanks to the absolute monster that is Rust's asynchronus ecosystem. Tokio and Axum are love-letters to backend developers worldwide who're fed up with NodeJS try/catch.
+1. **Data Streaming**: Stream the MBO file at 50k-500k messages/second over TCP (design for scalability)
+    - This was done quickly thanks to the absolute monster that is Rust's asynchronus ecosystem. Tokio and Axum are love-letters to backend developers worldwide who're fed up with NodeJS try/catch.
+    - I used TCP streams as they're less complex, easier to debug, and most importantly, compatible with Cloudflare Zero Trust Tunnels.
 2. **Order Book Reconstruction**: Build an accurate order book with p99 latency <50ms
 and output as JSON
-    - Once again, thanks to Axum, this was easy - p99 never went above 5ms even under 100 concurrent connections in a container with 2vCPUs and 2GB RAM. I was unable to find the upper limit because my (development machine) would die trying to hold more than 130~ connections, but CPU usage didn't even flicker. I suspect it could handle multiple thousand concurrent requests thanks to the extremely fast request turnaround time of 30~ms for a full upload (limited by my machine's connection, not the backend) and p50 of 300 microseconds. 
+    - Thanks to Axum, this was trivial - during testing, p99 never went above 5ms. Even under 100 concurrent connections in a container with 2vCPUs and 2GB RAM, it didn't break a sweat.
+    - I was unable to find the upper limit because my development machine would die trying to hold more than 130~ connections exhausting its `fork` limits, but CPU usage on the production server didn't even flicker.
+    - I suspect it could handle multiple thousand concurrent requests thanks to the extremely fast request turnaround time of 30~ms for a full upload (limited by my machine's connection, not the backend!) and p50 of 300 microseconds. 
 3. **Data Storage**: Persist to a time-series database
     - I chose to implement this with `rustqlite`, a safe wrapper on SQLite. I added functionality for further expansion should the backend want to serialize live data - it wasn't a requirement, but the option was there. It primarily serves as a persistent backup.
 4. **Deployment**: Dockerized application with clear setup instructions 
-    - I went hardcore with the CI/CD for this. Fully automated testing, frontend/backend builds, and multiple tiers of Docker Compose deployment for development, observability, and production. However, for production itself (with the help of Claude Opus) I wrote an extensive Kubernetes deployment, as that's the true enterprise standard. I deployed it on my local K8s cluster, and used Cloudflare's Zero Trust suite to point my domain at it.   
+    - I went hardcore with the CI/CD for this. Fully automated testing, frontend/backend builds, and multiple tiers of Docker Compose deployment for development, observability, and production.
+    - However, for production itself, I wrote an extensive Kubernetes deployment, as that's the true enterprise standard. I deployed it on my local K8s cluster, and used Cloudflare's Zero Trust suite to point my domain at it.
 
 ### Production Engineering
 6. **API Layer**: REST or WebSocket API supporting 10-100+ concurrent clients reading the order book
@@ -27,7 +32,8 @@ and output as JSON
 8. **Configuration Management**: Externalized config with no hardcoded credentials
     - Done, all variables are flexible and can be specified with `.env` or environment variables. The repo contains a `.env.example` for reference. I use `direnv` personally, as the project already uses Nix Flakes for development environments (Docker Compose is an option for those without).
 9. **Reproducible Builds**: Dependency locking and documented build process
-    - Yes, absolutely. Bun and Cargo are known for near-perfect dependency locking with their `Cargo.lock` and `bun.lockb` files. Additionally, Nix dev environments are locked with `flake.lock`. The self-documenting and human readable nature of Dockerfiles and GitHub Action YAML files means it's easy to have visibility into the build process, and you can see it happen live on GitHub!
+    - Yes, absolutely. Bun and Cargo are known for near-perfect dependency locking with their `Cargo.lock` and `bun.lockb` files. Additionally, Nix dev environments are locked with `flake.lock`.
+    - The self-documenting and human readable nature of Dockerfiles and GitHub Action YAML files means it's easy to have visibility into the build process, and you can see it happen live on GitHub!
 10. **Testing**: Unit tests, integration tests, or correctness proofs for order book logic
     - All of the above are implemented using `cargo test`. As part of the CI/CD, before a package is pushed to the registry, it must pass all Rust backend tests. All of the above mentioned are included.
 11. **Performance Optimization**: Achieve higher throughput (targeting 500K msg/sec with p99 <10ms)
@@ -42,15 +48,19 @@ and output as JSON
         - Dev/Observability/Psuedo-Prod: Multiple tiered Docker Compose YAMLs
         - Full-prod: Declarative Kuberenetes YAMLs
 15. **Resilience Testing**: Demonstrate graceful handling of failures (connection drops, pod kills, etc.)
-    - Yes. Graceful shutdowns, custom RAII guards for handling dropped connections kindly, and thanks to the `Drop` trait Rust weilds, it was mostly done for me in advance. The production Kubernetes deployments are all self-healing and let K8s do its thing to bring actual to desired state.
+    - Yes. Graceful shutdowns, custom RAII guards for handling dropped connections kindly, and thanks to the `Drop` trait Rust weilds, it was mostly done for me in advance.
+    - The production Kubernetes deployments are all self-healing and let K8s do its thing to bring actual to desired state.
 16. **API Reliability**: Idempotency, retry logic, proper error handling
-    - Absolutely. All operations are atomic and idempotent, as I made use of Rust's `Arc`, `RwLock`, and other concurrency types. All error handling is done with a contextual error handling crate I love called `anyhow`, which makes RCAs an delightfully simple. Addtionally, the frontend has data verification, Toast-based error handling and reporting, and absolutely zero chance of an unreported issue.
+    - Absolutely. All operations are atomic and idempotent, as I made use of Rust's `Arc`, `RwLock`, and other concurrency types.
+    - All error handling is done with a contextual error handling crate I love called `anyhow`, which makes RCAs an delightfully simple. There isn't a single `unwrap` or `expect` call in the entire core backend.
+    - The frontend has type verification, Toast-based error handling and reporting, and absolutely zero chance of an unreported issue.
 17. **Security**: Supply chain verification, dependency auditing, SBOM generation
-    - I have `dependabot` set up in the repository, which automatically runs `cargo-audit` and emails me if a dependency has a major CVE or issue, and prompts for major updates. Additionally, `cargo-sbom` is extremely straightforward and gives the SBOM visibility with one command.
+    - I have `dependabot` set up in the repository, which automatically runs `cargo-audit` and emails me if a dependency has a major CVE or issue, and prompts for major updates.
+    - `cargo-sbom` is extremely straightforward and gives the SBOM visibility with one command. The output is verbose so I omitted it, but the tool exists, works well, and one command.
 18. **Correctness Verification**: Prove the order book never violates exchange rules (price-time priority, valid quantities)
     - This was the most interesting for me, because I've very new to `databento`. I made two major decisions (in a real environment, I wouldn't have made either and would immediately reach out for advice!)
         - MBO messages that operate on things that don't yet or never exist are discarded with a `warn`-level log/trace event. I decided to do so since it's simply a limitation of having only a snapshot of the market.
-        - No crossed markets. Leaving it as allowed, there was a negative spread, which makes sense programmatically because of how these events work, but on the other hand makes no actual sense. As such, I added a correction layer that filters to only allow properly matched operations.
+        - No crossed markets. Leaving it as allowed, there was a negative spread, which makes sense programmatically because of how these events work, but on the other hand it mades no real-world sense. To compensate, I added a correction layer that filters to only allow properly matched operations.
 
 ## Full Process
 I started with **Order Book Reconstruction** to gain a better understanding of how the library worked, as it looked to be the most difficult comparatively. I was correct in this thought, and succeeded as a result. 
