@@ -18,26 +18,36 @@
           rustc = rustVersion;
         };
 
-        localRustBuild = rustPlatform.buildRustPackage rec {
-          pname = "app";
+        backendBuildInputs = with pkgs; [
+          (rustVersion.override { extensions = ["rust-src"]; })
+          pkg-config
+          cargo
+          gcc
+          rustfmt
+          clippy
+          openssl.dev
+          sqlite
+        ];
+
+        frontendBuildInputs = with pkgs; [
+          bun
+        ];
+
+        sharedBuildInputs = with pkgs; [
+          jq
+        ];
+
+        backendPackage = rustPlatform.buildRustPackage rec {
+          pname = "mbo-backend";
           version = "0.0.1";
-          src = ./.;
+          src = ./mbo-backend;
           cargoBuildFlags = "";
 
           cargoLock = {
-            lockFile = ./Cargo.lock;
+            lockFile = ./mbo-backend/Cargo.lock;
           };
 
-          nativeBuildInputs = [ (rustVersion.override { extensions = ["rust-src"]; }) ] ++ (with pkgs; [ 
-            pkg-config
-            cargo
-            gcc
-            rustfmt
-            clippy
-            openssl.dev
-            sqlite
-            jq
-          ]);
+          nativeBuildInputs = backendBuildInputs;
 
           RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
           PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
@@ -45,10 +55,18 @@
         };
       in
       {
-        defaultPackage = localRustBuild;
+        defaultPackage = backendPackage;
 
-        packages.cargo_setup = pkgs.mkShell {
-          buildInputs = with pkgs; [ cargo rustc ];
+        packages = {
+          backend = backendPackage;
+        };
+
+        devShell = pkgs.mkShell {
+          buildInputs = backendBuildInputs ++ frontendBuildInputs ++ sharedBuildInputs;
+          
+          RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
+          PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
+          OPENSSL_LIB_DIR = pkgs.openssl.out + "/lib";
         };
     });
 }
