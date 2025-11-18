@@ -33,7 +33,7 @@
 	<svelte:fragment slot="header">
 		<AppBar>
 			<svelte:fragment slot="lead">
-				<strong class="text-xl uppercase">MBO Order Book</strong>
+				<strong class="text-xl uppercase"></strong>
 			</svelte:fragment>
 			<svelte:fragment slot="trail">
 				<div class="flex items-center gap-4">
