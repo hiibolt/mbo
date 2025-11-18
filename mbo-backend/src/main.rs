@@ -5,20 +5,20 @@ mod metrics;
 
 use std::{path::Path, sync::Arc, time::Duration};
 
-use databento::{HistoricalClient, dbn::MboMsg};
+use databento::HistoricalClient;
 use anyhow::{Result, Context};
 use tokio::sync::RwLock;
 use tracing::info;
 
-use self::datatypes::market::Market;
+use crate::datatypes::market::{MarketSnapshot, load_market_snapshots};
+
 use self::storage::Storage;
 use self::metrics::Metrics;
 
 
 pub struct State {
     pub dbn_client: HistoricalClient,
-    pub market: Market,
-    pub mbo_messages: Vec<MboMsg>,
+    pub market_snapshots: Vec<MarketSnapshot>,
     pub storage: Storage,
     pub metrics: Arc<Metrics>,
 }
@@ -48,12 +48,12 @@ impl State {
         };
 
         // Build the market from a DBN file path specified
-        let (market, mbo_messages) = {
+        let market_snapshots = {
             let dbn_file_path_st = std::env::var("DBN_FILE_PATH")
                 .unwrap_or("assets/CLX5_mbo.dbn".to_string());
             let path = Path::new(&dbn_file_path_st);
 
-            Market::load_from_path_with_messages(path, Some(&storage))
+            load_market_snapshots(path, Some(&storage))
                 .context("...while loading market from DBN file")?
         };
 
@@ -63,8 +63,7 @@ impl State {
 
         Ok(Self {
             dbn_client,
-            market,
-            mbo_messages,
+            market_snapshots,
             storage,
             metrics,
         })

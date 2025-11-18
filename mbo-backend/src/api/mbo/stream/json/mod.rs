@@ -38,12 +38,11 @@ pub async fn handler(
     
     let state_read = state.read().await;
     
+    // Activate metrics
     state_read.metrics.http_requests_total.inc();
-    
-    // Increment active connections counter
     state_read.metrics.active_connections.inc();
     
-    let messages = state_read.mbo_messages.clone();
+    let market_snapshots = state_read.market_snapshots.clone();
     let metrics = Arc::clone(&state_read.metrics);
     let metrics_for_cleanup = Arc::clone(&state_read.metrics);
     
@@ -54,7 +53,7 @@ pub async fn handler(
     // Drop the read lock before streaming
     drop(state_read);
     
-    info!("Streaming {} MBO messages as Server-Sent Events", messages.len());
+    info!("Streaming {} MBO messages / Market Snapshots as Server-Sent Events", market_snapshots.len());
     
     // Create a channel to signal when the stream ends
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
@@ -67,13 +66,13 @@ pub async fn handler(
     });
     
     // Create a stream that yields each message as an SSE event
-    let stream = stream::iter(messages)
-        .map(move |msg| {
+    let stream = stream::iter(market_snapshots)
+        .map(move |snapshot| {
             // Increment messages processed counter
             metrics.messages_processed.inc();
             
             // Serialize each MboMsg to JSON
-            match serde_json::to_string(&msg) {
+            match serde_json::to_string(&snapshot) {
                 Ok(json) => Ok::<_, std::convert::Infallible>(Event::default().data(json)),
                 Err(e) => {
                     error!("Failed to serialize MboMsg: {}", e);

@@ -26,7 +26,7 @@ pub async fn handler(
     let state = state.read().await;
     
     // Serialize the market to JSON
-    match serde_json::to_value(&state.market) {
+    match serde_json::to_value(&state.market_snapshots) {
         Ok(json) => Json(json),
         Err(e) => {
             tracing::error!("Failed to serialize market: {}", e);

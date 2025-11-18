@@ -11,7 +11,19 @@ use anyhow::{Result, Context, bail, ensure};
 use tracing::warn;
 use serde::Serialize;
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Clone, Serialize)]
+pub enum BookEffect {
+    Add { side: Side, price: i64, size: u32 },
+    Cancel { side: Side, price: i64, size: u32 },
+    Modify { side: Side, old_price: i64, new_price: i64, old_size: u32, new_size: u32 }
+}
+impl Default for BookEffect {
+    fn default() -> Self {
+        BookEffect::Add { side: Side::None, price: 0, size: 0 }
+    }
+}
+
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct Book {
     orders_by_id: HashMap<u64, (Side, i64)>,
     offers: BTreeMap<i64, Level>,
@@ -93,25 +105,29 @@ impl Book {
     }
 
     #[tracing::instrument(skip(self), fields(order_id = mbo.order_id, action = ?mbo.action()))]
-    pub fn apply(&mut self, mbo: MboMsg) -> Result<()> {
+    pub fn apply(&mut self, mbo: MboMsg) -> Result<Result<Option<BookEffect>, String>> {
         let action = mbo.action()
             .context("MBO message has no valid action")?;
-        match action {
+        
+        Ok(match action {
             Action::Modify => {
-                if let Some(()) = self.modify(mbo.clone())? {
-                    warn!("Skipped Modify for pre-snapshot order ID {}", mbo.order_id);
-                }
+                self.modify(mbo)?
             }
-            Action::Trade | Action::Fill | Action::None => {}
+            Action::Trade | Action::Fill | Action::None => {
+                // These actions don't produce book effects
+                Ok(None)
+            }
             Action::Cancel => {
-                if let Some(()) = self.cancel(mbo.clone())? {
-                    warn!("Skipped Cancel for pre-snapshot order ID {}", mbo.order_id);
-                }
+                self.cancel(mbo)?
             }
-            Action::Add => { self.add(mbo)?; }
-            Action::Clear => self.clear(),
-        }
-        Ok(())
+            Action::Add => {
+                self.add(mbo)?
+            }
+            Action::Clear => {
+                self.clear();
+                Ok(None)
+            }
+        })
     }
 
     fn clear(&mut self) {
@@ -121,32 +137,41 @@ impl Book {
     }
 
     #[tracing::instrument(skip(self), fields(order_id = mbo.order_id, price = mbo.price, size = mbo.size))]
-    fn add(&mut self, mbo: MboMsg) -> Result<()> {
+    fn add(&mut self, mbo: MboMsg) -> Result<Result<Option<BookEffect>, String>> {
         let price = mbo.price;
         let side = mbo.side()
             .context("MBO message has no valid side")?;
+        
         if mbo.flags.is_tob() {
             let levels: &mut BTreeMap<i64, Level> = self.side_levels_mut(side)?;
             levels.clear();
             // UNDEF_PRICE indicates the side's book should be cleared
             // and doesn't represent an order that should be added
             if mbo.price != UNDEF_PRICE {
-                levels.insert(price, VecDeque::from([mbo]));
+                levels.insert(price, VecDeque::from([mbo.clone()]));
+                Ok(Ok(Some(BookEffect::Add { side, price, size: mbo.size })))
+            } else {
+                Ok(Ok(None))
             }
         } else {
             ensure!(price != UNDEF_PRICE, "Price cannot be UNDEF_PRICE for non-TOB add");
-            ensure!(
-                self.orders_by_id.insert(mbo.order_id, (side, price)).is_none(),
-                "Duplicate order ID {} - order already exists in book",
-                mbo.order_id
-            );
+            
+            if self.orders_by_id.contains_key(&mbo.order_id) {
+                return Ok(Err(format!(
+                    "Duplicate order ID {} - order already exists in book",
+                    mbo.order_id
+                )));
+            }
+            
+            self.orders_by_id.insert(mbo.order_id, (side, price));
             let level: &mut Level = self.get_or_insert_level(side, price)?;
-            level.push_back(mbo);
+            level.push_back(mbo.clone());
             
             // Check if this add created a crossed book and clean it up
             self.match_crossed_orders()?;
+            
+            Ok(Ok(Some(BookEffect::Add { side, price, size: mbo.size })))
         }
-        Ok(())
     }
     
     /// Match and remove crossed orders to maintain book invariants.
@@ -201,29 +226,34 @@ impl Book {
     }
 
     #[tracing::instrument(skip(self), fields(order_id = mbo.order_id, price = mbo.price, size = mbo.size))]
-    fn cancel(&mut self, mbo: MboMsg) -> Result<Option<()>> {
+    fn cancel(&mut self, mbo: MboMsg) -> Result<Result<Option<BookEffect>, String>> {
         let side = mbo.side()
             .context("MBO message has no valid side")?;
         
         // If the level doesn't exist, this cancel is for an order we never saw (pre-snapshot)
         let Ok(level) = self.level_mut(side, mbo.price) else {
-            return Ok(Some(())); // Skip - order was added before our data started
+            warn!("Skipped Cancel for pre-snapshot order ID {} - level not found", mbo.order_id);
+            return Ok(Ok(None)); // Skip - order was added before our data started
         };
         
         // If the order isn't in the level, skip it (pre-snapshot order)
         let Ok(order_idx) = Self::find_order(level, mbo.order_id) else {
-            return Ok(Some(())); // Skip
+            warn!("Skipped Cancel for pre-snapshot order ID {} - order not in level", mbo.order_id);
+            return Ok(Ok(None)); // Skip
         };
         
         let existing_order = level.get_mut(order_idx)
             .context("Order index out of bounds")?;
-        ensure!(
-            existing_order.size >= mbo.size,
-            "Cancel size {} exceeds existing order size {} for order ID {}",
-            mbo.size,
-            existing_order.size,
-            mbo.order_id
-        );
+        
+        if existing_order.size < mbo.size {
+            return Ok(Err(format!(
+                "Cancel size {} exceeds existing order size {} for order ID {}",
+                mbo.size,
+                existing_order.size,
+                mbo.order_id
+            )));
+        }
+        
         existing_order.size -= mbo.size;
         if existing_order.size == 0 {
             level.remove(order_idx)
@@ -233,24 +263,42 @@ impl Book {
             }
             self.orders_by_id.remove(&mbo.order_id);
         }
-        Ok(None)
+        
+        Ok(Ok(Some(BookEffect::Cancel { side, price: mbo.price, size: mbo.size })))
     }
 
     #[tracing::instrument(skip(self), fields(order_id = mbo.order_id, price = mbo.price, size = mbo.size))]
-    fn modify(&mut self, mbo: MboMsg) -> Result<Option<()>> {
+    fn modify(&mut self, mbo: MboMsg) -> Result<Result<Option<BookEffect>, String>> {
         let order_id = mbo.order_id;
         let side = mbo.side()
             .context("MBO message has no valid side")?;
+        
         let Some((id_side, id_price)) = self.orders_by_id.get_mut(&order_id) else {
             // If order not found, skip (pre-snapshot order)
             // We don't treat it as an add because we don't know its history
-            return Ok(Some(()));
+            warn!("Skipped Modify for pre-snapshot order ID {}", order_id);
+            return Ok(Ok(None));
         };
+        
         let prev_side = *id_side;
         let prev_price = *id_price;
+        
+        // Get the old size before modifying
+        let old_size = {
+            let level = self.level_mut(prev_side, prev_price)?;
+            let order_idx = Self::find_order(level, mbo.order_id)
+                .context("...while finding order in level")?;
+            let existing_order = level.get(order_idx)
+                .context("Order index out of bounds")?;
+            existing_order.size
+        };
+        
         // Update orders by ID
+        let (id_side, id_price) = self.orders_by_id.get_mut(&order_id)
+            .context("Order disappeared from orders_by_id")?;
         *id_side = side;
         *id_price = mbo.price;
+        
         // Update level order
         let level = self.level_mut(prev_side, prev_price)?;
         let order_idx = Self::find_order(level, mbo.order_id)
@@ -258,10 +306,21 @@ impl Book {
         let existing_order = level.get_mut(order_idx)
             .context("Order index out of bounds")?;
         existing_order.size = mbo.size;
-        let should_keep_priority = prev_price == mbo.price && existing_order.size >= mbo.size;
+        
+        let should_keep_priority = prev_price == mbo.price && mbo.size <= old_size;
+        
         if should_keep_priority {
-            return Ok(None);
+            // Simple size reduction at same price - keep priority
+            return Ok(Ok(Some(BookEffect::Modify {
+                side,
+                old_price: prev_price,
+                new_price: mbo.price,
+                old_size,
+                new_size: mbo.size
+            })));
         }
+        
+        // Lost priority - remove and re-add at back
         if prev_price != mbo.price {
             let prev_level = level;
             Self::remove_order(prev_level, order_id)?;
@@ -269,12 +328,19 @@ impl Book {
                 self.remove_level(side, prev_price)?;
             }
             let level = self.get_or_insert_level(side, mbo.price)?;
-            level.push_back(mbo);
+            level.push_back(mbo.clone());
         } else {
             Self::remove_order(level, order_id)?;
-            level.push_back(mbo);
+            level.push_back(mbo.clone());
         }
-        Ok(None)
+        
+        Ok(Ok(Some(BookEffect::Modify {
+            side,
+            old_price: prev_price,
+            new_price: mbo.price,
+            old_size,
+            new_size: mbo.size
+        })))
     }
 
     fn get_or_insert_level(&mut self, side: Side, price: i64) -> Result<&mut Level> {
@@ -342,7 +408,7 @@ mod tests {
         
         while let Some(msg) = decoder.decode_record::<MboMsg>()? {
             // Apply the message to the book
-            book.apply(msg.clone())?;
+            let _ = book.apply(msg.clone())?;
             processed += 1;
             
             if processed >= max_messages {
@@ -402,7 +468,7 @@ mod tests {
             }
             
             // Apply the message
-            book.apply(msg.clone())?;
+            let _ = book.apply(msg.clone())?;
             
             // Verify invariants after each operation
             let (best_bid, best_ask) = book.bbo();
@@ -441,7 +507,7 @@ mod tests {
             let Some(msg) = decoder.decode_record::<MboMsg>()? else {
                 break;
             };
-            book.apply(msg.clone())?;
+            let _ = book.apply(msg.clone())?;
         }
         
         // Get snapshot with 5 levels
@@ -510,7 +576,7 @@ mod tests {
             }
             
             // This should not error even if the order doesn't exist
-            book.apply(msg.clone())?;
+            let _ = book.apply(msg.clone())?;
         }
         
         // We expect some pre-snapshot orders in real data
@@ -530,7 +596,7 @@ mod tests {
         
         // Process ALL messages
         while let Some(msg) = decoder.decode_record::<MboMsg>()? {
-            book.apply(msg.clone())?;
+            let _ = book.apply(msg.clone())?;
             processed += 1;
         }
         
@@ -574,7 +640,7 @@ mod tests {
         
         // Process ALL messages and check after each one
         while let Some(msg) = decoder.decode_record::<MboMsg>()? {
-            book.apply(msg.clone())?;
+            let _ = book.apply(msg.clone())?;
             processed += 1;
             
             let (best_bid, best_ask) = book.bbo();
@@ -630,7 +696,7 @@ mod tests {
                     println!("\nChecking next {} messages to see if it clears...", check_window);
                     for i in 1..=check_window {
                         if let Some(next_msg) = decoder.decode_record::<MboMsg>()? {
-                            book.apply(next_msg.clone())?;
+                            let _ = book.apply(next_msg.clone())?;
                             let (new_bid, new_ask) = book.bbo();
                             
                             if let (Some(b), Some(a)) = (new_bid, new_ask) {
@@ -679,7 +745,7 @@ mod tests {
         
         // Process all messages and verify book never crosses
         while let Some(msg) = decoder.decode_record::<MboMsg>()? {
-            book.apply(msg.clone())?;
+            let _ = book.apply(msg.clone())?;
             processed += 1;
             
             // Verify book is never crossed (bid should be <= ask after matching)
