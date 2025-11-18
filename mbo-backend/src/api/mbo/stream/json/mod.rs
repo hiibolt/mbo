@@ -31,50 +31,66 @@ pub async fn handler(
     use axum::response::sse::{Event, Sse};
     use futures::stream::{self, StreamExt};
     
+    // Start timing this request
+    let start = std::time::Instant::now();
+    
     info!("Client connected to MBO JSON stream");
     
     let state_read = state.read().await;
     
-    // Increment active connections metric
-    state_read.metrics.active_connections.inc();
     state_read.metrics.http_requests_total.inc();
+    
+    // Increment active connections counter
+    state_read.metrics.active_connections.inc();
     
     let messages = state_read.mbo_messages.clone();
     let metrics = Arc::clone(&state_read.metrics);
+    let metrics_for_cleanup = Arc::clone(&state_read.metrics);
+    
+    // Record HTTP request setup duration
+    let setup_duration = start.elapsed();
+    metrics.http_request_duration.observe(setup_duration.as_secs_f64());
     
     // Drop the read lock before streaming
     drop(state_read);
     
     info!("Streaming {} MBO messages as Server-Sent Events", messages.len());
     
-    // Clone metrics for use in stream and cleanup
-    let metrics_for_stream = Arc::clone(&metrics);
-    let metrics_for_cleanup = Arc::clone(&metrics);
+    // Create a channel to signal when the stream ends
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    let mut tx = Some(tx);
+    
+    // Spawn a background task that will decrement the counter when the stream ends or is dropped
+    tokio::spawn(async move {
+        let _ = rx.await;
+        metrics_for_cleanup.active_connections.dec();
+    });
     
     // Create a stream that yields each message as an SSE event
     let stream = stream::iter(messages)
         .map(move |msg| {
             // Increment messages processed counter
-            metrics_for_stream.messages_processed.inc();
+            metrics.messages_processed.inc();
             
             // Serialize each MboMsg to JSON
             match serde_json::to_string(&msg) {
                 Ok(json) => Ok::<_, std::convert::Infallible>(Event::default().data(json)),
                 Err(e) => {
                     error!("Failed to serialize MboMsg: {}", e);
-                    metrics_for_stream.messages_processing_errors.inc();
+                    metrics.messages_processing_errors.inc();
                     Ok(Event::default().data(format!("{{\"error\": \"{}\"}}", e)))
                 }
             }
-        });
+        })
+        .chain(stream::once(async move {
+            // Signal cleanup when stream ends
+            if let Some(tx) = tx.take() {
+                let _ = tx.send(());
+            }
+            Ok(Event::default().comment("stream_end"))
+        }));
     
-    // Decrement active connections when stream ends
-    let stream_with_cleanup = stream.chain(stream::once(async move {
-        metrics_for_cleanup.active_connections.dec();
-        Ok(Event::default().comment("stream_end"))
-    }));
-    
-    Sse::new(stream_with_cleanup).keep_alive(
+    Sse::new(stream).keep_alive(
         axum::response::sse::KeepAlive::new()
             .interval(std::time::Duration::from_secs(15))
     )

@@ -37,11 +37,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2.0'
-          memory: 2G
+          cpus: '8.0'
+          memory: 24G
         reservations:
-          cpus: '0.5'
-          memory: 512M
+          cpus: '2.0'
+          memory: 4G
     
     networks:
       - mbo-network
@@ -85,6 +85,15 @@ services:
       timeout: 3s
       start_period: 10s
       retries: 3
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '8.0'
+          memory: 24G
+        reservations:
+          cpus: '2.0'
+          memory: 4G
     
     networks:
       - mbo-network
