@@ -10,39 +10,26 @@
 	import BestBidCard from '$lib/components/BestBidCard.svelte';
 	import BestOfferCard from '$lib/components/BestOfferCard.svelte';
 	import MarketStatsCard from '$lib/components/MarketStatsCard.svelte';
-
+	
+	// Import types and utilities
+	import type { 
+		Market, 
+		OrderBook, 
+		ErrorState,
+		PriceLevel 
+	} from '$lib/types';
+	import { 
+		formatPrice, 
+		calculateSpread, 
+		calculateMidPrice 
+	} from '$lib/types';
+	
 	const toastStore = getToastStore();
-
-	// Types
-	interface PriceLevel {
-		price: number;
-		size: number;
-		count: number;
-	}
-
-	interface OrderBook {
-		symbol: string;
-		timestamp: string;
-		best_bid: PriceLevel | null;
-		best_offer: PriceLevel | null;
-	}
-
-	interface Market {
-		books: Record<string, any>;
-	}
-
-	interface ErrorState {
-		hasError: boolean;
-		message: string;
-		details?: string;
-		canRetry: boolean;
-	}
 
 	// State
 	let orderBook: OrderBook | null = null;
 	let isLoading = true;
 	let lastUpdated: Date | null = null;
-
 	let errorState: ErrorState = {
 		hasError: false,
 		message: '',
@@ -69,24 +56,18 @@
 		toastStore.trigger(t);
 	}
 
-	// Format price for display
-	function formatPrice(price: number | null): string {
-		if (price === null) return 'N/A';
-		return (price / 1e9).toFixed(2);
+	// Calculate spread (wrapper for display)
+	function getSpread(): string {
+		if (!orderBook?.best_bid || !orderBook?.best_offer) return 'N/A';
+		const spread = calculateSpread(orderBook.best_bid, orderBook.best_offer);
+		return spread !== null ? formatPrice(spread) : 'N/A';
 	}
 
-	// Calculate spread
-	function calculateSpread(): string {
+	// Calculate mid price (wrapper for display)
+	function getMidPrice(): string {
 		if (!orderBook?.best_bid || !orderBook?.best_offer) return 'N/A';
-		const spread = orderBook.best_offer.price - orderBook.best_bid.price;
-		return (spread / 1e9).toFixed(2);
-	}
-
-	// Calculate mid price
-	function calculateMidPrice(): string {
-		if (!orderBook?.best_bid || !orderBook?.best_offer) return 'N/A';
-		const mid = (orderBook.best_bid.price + orderBook.best_offer.price) / 2;
-		return (mid / 1e9).toFixed(2);
+		const mid = calculateMidPrice(orderBook.best_bid, orderBook.best_offer);
+		return mid !== null ? formatPrice(mid) : 'N/A';
 	}
 
 	// Extract BBO from market data
@@ -123,27 +104,31 @@
 		const bidPrices = Object.keys(bids).map(Number).sort((a, b) => b - a);
 		const askPrices = Object.keys(asks).map(Number).sort((a, b) => a - b);
 
-		let best_bid = null;
+		let best_bid: PriceLevel | null = null;
 		if (bidPrices.length > 0) {
 			const price = bidPrices[0];
 			const level = bids[price];
 			let size = 0;
 			let count = Object.keys(level).length;
+
 			Object.values(level).forEach((order: any) => {
 				size += order.size || 0;
 			});
+
 			best_bid = { price, size, count };
 		}
 
-		let best_offer = null;
+		let best_offer: PriceLevel | null = null;
 		if (askPrices.length > 0) {
 			const price = askPrices[0];
 			const level = asks[price];
 			let size = 0;
 			let count = Object.keys(level).length;
+
 			Object.values(level).forEach((order: any) => {
 				size += order.size || 0;
 			});
+
 			best_offer = { price, size, count };
 		}
 
@@ -162,6 +147,7 @@
 			errorState = { hasError: false, message: '', canRetry: false };
 
 			const response = await fetch('/api/market/export');
+			
 			if (!response.ok) {
 				throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 			}
@@ -175,7 +161,6 @@
 			
 			lastUpdated = new Date();
 			isLoading = false;
-
 			showSuccessToast('Market snapshot loaded successfully');
 		} catch (err) {
 			const error = err as Error;
@@ -201,7 +186,7 @@
 		try {
 			const response = await fetch('/api/market/export');
 			if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
+			
 			const blob = await response.blob();
 			const url = window.URL.createObjectURL(blob);
 			const a = document.createElement('a');
@@ -211,7 +196,7 @@
 			a.click();
 			window.URL.revokeObjectURL(url);
 			document.body.removeChild(a);
-
+			
 			showSuccessToast('JSON export downloaded');
 		} catch (err) {
 			const error = err as Error;
@@ -226,7 +211,7 @@
 			
 			const response = await fetch('/api/mbo/stream/json');
 			if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
+			
 			const reader = response.body?.getReader();
 			if (!reader) throw new Error('No response body');
 
@@ -255,7 +240,7 @@
 			a.click();
 			window.URL.revokeObjectURL(url);
 			document.body.removeChild(a);
-
+			
 			showSuccessToast('MBO stream downloaded successfully');
 		} catch (err) {
 			const error = err as Error;
@@ -306,8 +291,8 @@
 
 					<!-- Market Stats -->
 					<MarketStatsCard 
-						spread={calculateSpread()}
-						midPrice={calculateMidPrice()}
+						spread={getSpread()}
+						midPrice={getMidPrice()}
 					/>
 
 					<!-- Best Offer -->
