@@ -21,6 +21,7 @@ RUN apt-get update && \
     libssl3 \
     ca-certificates \
     sqlite3 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
