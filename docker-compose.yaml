@@ -1,0 +1,123 @@
+version: '3.8'
+
+services:
+  # Backend API service - Market data streaming and order book reconstruction
+  backend:
+    image: ghcr.io/hiibolt/mbo-backend:latest
+    container_name: mbo-backend
+    restart: unless-stopped
+
+    # Environment configuration
+    environment:
+      # Server binding
+      BIND_ADDRESS: 0.0.0.0:3000
+      # Database configuration - uses persistent volume
+      DB_PATH: /app/data/mbo.db
+      # Market data file - included in image at build time
+      DBN_FILE_PATH: /app/assets/CLX5_mbo.dbn
+      # Databento API key - REQUIRED, set in .env file
+      DBN_KEY: ${DBN_KEY:?DBN_KEY is required}
+      # Logging configuration
+      RUST_LOG: ${RUST_LOG:-info}
+    
+    # Port mapping - expose backend API
+    ports:
+      - "3000:3000"
+    
+    # Persistent volume for SQLite database
+    volumes:
+      - mbo-db-data:/app/data
+    
+    # Health check configuration
+    healthcheck:
+      test: ["CMD", "/app/mbo", "--version"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    
+    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    # Networks
+    networks:
+      - mbo-network
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Frontend UI service - SvelteKit application
+  frontend:
+    image: ghcr.io/hiibolt/mbo-frontend:latest
+    container_name: mbo-frontend
+    restart: unless-stopped
+    
+    # Port mapping - expose frontend
+    ports:
+      - "8080:80"
+    
+    # Health check configuration
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    
+    # Depends on backend service
+    depends_on:
+      backend:
+        condition: service_healthy
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    
+    # Networks
+    networks:
+      - mbo-network
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Named volumes for persistent data
+volumes:
+  # SQLite database persistent storage
+  # This volume persists across container restarts and updates
+  mbo-db-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      # Update this path to your desired location
+      device: ./data
+    labels:
+      description: "Persistent storage for MBO SQLite database"
+
+# Networks
+networks:
+  mbo-network:
+    driver: bridge
+    labels:
+      description: "Internal network for MBO services"

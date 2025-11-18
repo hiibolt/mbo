@@ -18,6 +18,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: '1.91'
+          components: clippy
       
       - name: Cache Rust dependencies
         uses: actions/cache@v4
@@ -54,7 +55,7 @@ jobs:
       
       - name: Install dependencies
         working-directory: mbo-frontend
-        run: bun install --frozen-lockfile
+        run: bun install
       
       - name: Run type check
         working-directory: mbo-frontend

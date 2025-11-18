@@ -3,6 +3,9 @@
 /.direnv
 .env
 
+# Persistent data directory
+/data/
+
 # Build artifacts
 /target
 
