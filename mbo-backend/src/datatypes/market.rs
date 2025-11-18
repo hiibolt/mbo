@@ -187,3 +187,26 @@ impl Market {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[test]
+    fn test_market_with_real_data() -> Result<()> {
+        let path = Path::new("assets/CLX5_mbo.dbn");
+        
+        // Load market from the real DBN file (without storage to keep test simple)
+        let (market, messages) = Market::load_from_path_with_messages(path, None)?;
+        
+        assert!(messages.len() > 0, "Should have loaded messages");
+        assert!(market.instrument_count() > 0, "Should have at least one instrument");
+        
+        println!("Loaded {} messages across {} instruments", 
+            messages.len(), 
+            market.instrument_count()
+        );
+        
+        Ok(())
+    }
+}

@@ -270,3 +270,200 @@ impl Book {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use databento::dbn::decode::{dbn::Decoder, DecodeRecord};
+    use std::path::Path;
+    
+    #[test]
+    fn test_book_with_real_data() -> Result<()> {
+        let path = Path::new("assets/CLX5_mbo.dbn");
+        let mut decoder = Decoder::from_file(path)?;
+        let mut book = Book::new();
+        
+        let mut processed = 0;
+        let max_messages = 1000; // Process first 1000 messages
+        
+        while let Some(msg) = decoder.decode_record::<MboMsg>()? {
+            // Apply the message to the book
+            book.apply(msg.clone())?;
+            processed += 1;
+            
+            if processed >= max_messages {
+                break;
+            }
+        }
+        
+        assert!(processed > 0, "Should have processed messages");
+        
+        // Verify the book has some state
+        let (best_bid, best_ask) = book.bbo();
+        
+        // At least one side should have orders after processing real data
+        assert!(
+            best_bid.is_some() || best_ask.is_some(),
+            "Book should have at least bid or ask after processing {} messages", 
+            processed
+        );
+        
+        println!("Processed {} messages successfully", processed);
+        if let Some(bid) = best_bid {
+            println!("Best bid: {} @ {}", bid.size, bid.price);
+        }
+        if let Some(ask) = best_ask {
+            println!("Best ask: {} @ {}", ask.size, ask.price);
+        }
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_order_book_invariants_with_real_data() -> Result<()> {
+        use databento::dbn::Action;
+        
+        let path = Path::new("assets/CLX5_mbo.dbn");
+        let mut decoder = Decoder::from_file(path)?;
+        let mut book = Book::new();
+        
+        let max_messages = 5000;
+        let mut adds = 0;
+        let mut cancels = 0;
+        let mut modifies = 0;
+        
+        for _ in 0..max_messages {
+            let Some(msg) = decoder.decode_record::<MboMsg>()? else {
+                break;
+            };
+            
+            // Track action types
+            if let Ok(action) = msg.action() {
+                match action {
+                    Action::Add => adds += 1,
+                    Action::Cancel => cancels += 1,
+                    Action::Modify => modifies += 1,
+                    _ => {}
+                }
+            }
+            
+            // Apply the message
+            book.apply(msg.clone())?;
+            
+            // Verify invariants after each operation
+            let (best_bid, best_ask) = book.bbo();
+            
+            // If both sides exist, bid should be lower than or equal to ask
+            // (they can be equal in crossed markets before clearing)
+            if let (Some(bid), Some(ask)) = (best_bid, best_ask) {
+                assert!(
+                    bid.price <= ask.price,
+                    "Bid price {} should be less than or equal to ask price {}",
+                    bid.price,
+                    ask.price
+                );
+                
+                // All sizes and counts should be positive
+                assert!(bid.size > 0, "Best bid size should be positive");
+                assert!(ask.size > 0, "Best ask size should be positive");
+                assert!(bid.count > 0, "Best bid count should be positive");
+                assert!(ask.count > 0, "Best ask count should be positive");
+            }
+        }
+        
+        println!("Processed {} adds, {} cancels, {} modifies", adds, cancels, modifies);
+        assert!(adds > 0, "Should have processed some add operations");
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_snapshot_consistency() -> Result<()> {
+        let path = Path::new("assets/CLX5_mbo.dbn");
+        let mut decoder = Decoder::from_file(path)?;
+        let mut book = Book::new();
+        
+        // Process some messages
+        for _ in 0..2000 {
+            let Some(msg) = decoder.decode_record::<MboMsg>()? else {
+                break;
+            };
+            book.apply(msg.clone())?;
+        }
+        
+        // Get snapshot with 5 levels
+        let snapshot = book.snapshot(5);
+        assert_eq!(snapshot.len(), 5);
+        
+        // Verify bid prices are descending (highest first)
+        for i in 0..4 {
+            if snapshot[i].bid_px != 0 && snapshot[i + 1].bid_px != 0 {
+                assert!(
+                    snapshot[i].bid_px >= snapshot[i + 1].bid_px,
+                    "Bid prices should be descending: level {} ({}) >= level {} ({})",
+                    i, snapshot[i].bid_px, i + 1, snapshot[i + 1].bid_px
+                );
+            }
+        }
+        
+        // Verify ask prices are ascending (lowest first)
+        for i in 0..4 {
+            if snapshot[i].ask_px != 0 && snapshot[i + 1].ask_px != 0 {
+                assert!(
+                    snapshot[i].ask_px <= snapshot[i + 1].ask_px,
+                    "Ask prices should be ascending: level {} ({}) <= level {} ({})",
+                    i, snapshot[i].ask_px, i + 1, snapshot[i + 1].ask_px
+                );
+            }
+        }
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_pre_snapshot_order_handling() -> Result<()> {
+        use databento::dbn::Action;
+        
+        let path = Path::new("assets/CLX5_mbo.dbn");
+        let mut decoder = Decoder::from_file(path)?;
+        let mut book = Book::new();
+        
+        let mut skipped_cancels = 0;
+        let mut skipped_modifies = 0;
+        
+        // The first messages in the file may reference orders from before the snapshot
+        for _ in 0..100 {
+            let Some(msg) = decoder.decode_record::<MboMsg>()? else {
+                break;
+            };
+            
+            let order_id = msg.order_id;
+            
+            // Check if this is a cancel/modify for an order we don't have
+            if let Ok(action) = msg.action() {
+                match action {
+                    Action::Cancel => {
+                        if book.order(order_id).is_none() {
+                            skipped_cancels += 1;
+                        }
+                    }
+                    Action::Modify => {
+                        if book.order(order_id).is_none() {
+                            skipped_modifies += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            
+            // This should not error even if the order doesn't exist
+            book.apply(msg.clone())?;
+        }
+        
+        // We expect some pre-snapshot orders in real data
+        println!("Skipped {} pre-snapshot cancels and {} pre-snapshot modifies", 
+            skipped_cancels, skipped_modifies);
+        
+        Ok(())
+    }
+}

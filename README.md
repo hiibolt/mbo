@@ -1,6 +1,5 @@
-
 ## Steps Chosen
-I chose to do all four major targets, I had nothing better to do tonight.
+I chose to do all four major targets and all engineering requirements, I had nothing better to do tonight.
 
 I started with **Order Book Reconstruction** to gain a better understanding of how the library worked, as it looked to be the most difficult comparatively. I was correct in this thought, and succeeded as a result. **CR** = Core Requirement, **PE** = Production Requirement, **SI** = Self-Imposed
 - 1. (SI) **Boilerplate**: Approx. 5-10m to select a stack and solid dependency foundation.
@@ -11,11 +10,12 @@ I started with **Order Book Reconstruction** to gain a better understanding of h
 - 5. (SI) **Endpoint Documentation**: Approx 20m to learn how `utopia` (Swagger/OpenAPI docgen tooling for Rust) works and implement. I figured this is important for any API that's meant to be user-facing like this. My face lights up when I see these as a developer, and I'm sure other's do too.
 - 6. (SI) **Recollecting**: Approx. 10m to drink more water and internally debate which database to use. For the sake of getting it done tonight, I chose SQLite, which for the constraints (50-500k) is a valid choice, as we're streaming these results from memory - the database is only for persistant storage. If I were to actually deploy this project and expect the number of request to increase by a large factor, I'd consider using SurrealDB or TimescaleDB - my choice was again for speed of development.
 - 7. (CR) **Data Storage**: Approx 40m to develop and implement an `SQLite` implementation with `rusqlite`. I wrote the schema with assistance from Opus 4.1, verified by hand, and let Sonnet 4.5 handle the file loading modification to support persistent writes.
-- 8. (PE) **Frontend**: Approx 1hr to build a Svelte, Skeleton, Tailwind, and Bun-based frontend. I use all but Skeleton regularly in personal work, and let Sonnet handle templating the site with Skeleton for sake of rapid iteration. 
+- 8. (PE) **Frontend**: Approx 2hrs to build a Svelte, Skeleton, Tailwind, and Bun-based frontend. I use all but Skeleton regularly in personal work, and let Sonnet handle templating the site with Skeleton for sake of rapid iteration. It only actually took around an hour, but I went out for dinner halfway through.
     - 8.1. I'm a big fan of Svelte, it's somewhat Rust-like in that it behaves in an opinionated but predictable manner (and has great docs!). One you internalize how development is meant to be done with modern Runes, it's a cinch.
     - 8.2. Bun is amazing. It's funny, they actually don't have a Bun caching action on GitHub Actions because Bun installs faster than the overhead of launching a GitHub Action, if you want a laugh, take a look at [one of my favorite GitHub replies](https://github.com/oven-sh/setup-bun/issues/14#issuecomment-1714116221). It also makes using TypeScript extremely easy, which is nice for coordinating types with verification between the frontend and backend.
     - 8.3. Tailwind needs no introduction. Lightweight, minimal, and LLMs are great at quickly iterating quality CSS - Tailwind training data is vastly better than raw CSS training data.
     - 8.4. Skeleton is commonly used for pages like this, and Opus recommended it during brainstorming, so I viewed the docs and quickly agreed.
+- 9. (PE) **Testing** - Approx 15m to develop, verify, and implement a series of tests based on the provided file. I chose to use the standard `cargo` testing suite because it's what I'm most familiar with. There are more comprehensive suites that can test both the frontend/backend simultaneously, but I was planning to use GitHub Actions to test seperately, since you get a pretty nice dopamine hit from seeing that `X/X` with a checkmark on the GitHub UI.
 
 ## AI Usage
 I used Claude Opus 4.1 for dense, difficult tasks requiring heavy verification and Claude Sonnet 4.5 for less intense tasks such as test verification, by-line documentation, and rapid templating.

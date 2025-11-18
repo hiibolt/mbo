@@ -239,3 +239,74 @@ impl Storage {
             .context("Failed to collect query results")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use databento::dbn::decode::{dbn::Decoder, DecodeRecord};
+    use std::path::Path as StdPath;
+    
+    #[test]
+    fn test_storage_initialization() -> Result<()> {
+        // Create a temporary database
+        let temp_db = "test_storage_init.db";
+        
+        // Clean up any existing test database
+        let _ = std::fs::remove_file(temp_db);
+        
+        let storage = Storage::new(temp_db)?;
+        let count = storage.count_messages()?;
+        
+        assert_eq!(count, 0, "New database should have 0 messages");
+        
+        // Clean up
+        drop(storage);
+        let _ = std::fs::remove_file(temp_db);
+        let _ = std::fs::remove_file(format!("{}-shm", temp_db));
+        let _ = std::fs::remove_file(format!("{}-wal", temp_db));
+        
+        Ok(())
+    }
+    
+    #[test]
+    fn test_storage_batch_insert() -> Result<()> {
+        use databento::dbn::MboMsg;
+        
+        let temp_db = "test_storage_batch.db";
+        let _ = std::fs::remove_file(temp_db);
+        
+        let storage = Storage::new(temp_db)?;
+        
+        // Load some real MBO messages
+        let path = StdPath::new("assets/CLX5_mbo.dbn");
+        let mut decoder = Decoder::from_file(path)?;
+        
+        let mut messages = Vec::new();
+        for _ in 0..100 {
+            if let Some(msg) = decoder.decode_record::<MboMsg>()? {
+                messages.push(msg.clone());
+            } else {
+                break;
+            }
+        }
+        
+        assert!(!messages.is_empty(), "Should have loaded some messages");
+        
+        // Insert batch
+        storage.insert_mbo_batch(&messages)?;
+        
+        // Verify count
+        let count = storage.count_messages()?;
+        assert_eq!(count, messages.len(), "Should have inserted all messages");
+        
+        println!("Successfully inserted {} messages", count);
+        
+        // Clean up
+        drop(storage);
+        let _ = std::fs::remove_file(temp_db);
+        let _ = std::fs::remove_file(format!("{}-shm", temp_db));
+        let _ = std::fs::remove_file(format!("{}-wal", temp_db));
+        
+        Ok(())
+    }
+}
