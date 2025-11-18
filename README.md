@@ -8,6 +8,7 @@ I started with **Order Book Reconstruction** to gain a better understanding of h
     - 2.1. I diverted from their documentation to implement logging when an `MboMsg` does something impossible like cancelling a non-existant order (for example, `MboMsg` #2). When such a thing occurs, it is safey ignored and tracing logs are emitted.
 - 3. **Recollecting**: Approx. 10m to drink water and close-read requirements to begin planning the future structure of the repository, server, and frontend.
 - 4. **Data Streaming**: Approx. 10m to convert repository to a webserver, 10m to write JSON export endpoint, and 15m to write a failure-safe TCP streaming endpoint.
+- 5. **Endpoint Documentation**: Approx 20m to learn how `utopia` (Swagger/OpenAPI docgen tooling for Rust) works and implement
 
 ## AI Usage
 I used Claude Opus 4.1 for dense, difficult tasks requiring heavy verification and Claude Sonnet 4.5 for less intense tasks such as test verification, by-line documentation, and rapid templating.

@@ -6,6 +6,24 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{instrument, info, error};
 
+/// Stream MBO messages as Server-Sent Events
+///
+/// Streams all MBO (Market-By-Order) messages from the loaded dataset
+/// as newline-delimited JSON events. Compatible with Cloudflare tunnels
+/// and standard HTTP streaming.
+///
+/// The stream includes:
+/// - All order book updates (Add, Cancel, Modify)
+/// - Trade executions
+/// - Timestamp and sequencing information
+#[utoipa::path(
+    get,
+    path = "/api/mbo/stream/json",
+    responses(
+        (status = 200, description = "SSE stream of MBO messages", content_type = "text/event-stream"),
+    ),
+    tag = "mbo"
+)]
 #[instrument(skip(state))]
 pub async fn handler(
     State(state): State<Arc<RwLock<crate::State>>>,
