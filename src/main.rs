@@ -1,5 +1,6 @@
 mod datatypes;
 mod api;
+mod storage;
 
 use std::{path::Path, sync::Arc, time::Duration};
 
@@ -9,12 +10,14 @@ use tokio::sync::RwLock;
 use tracing::info;
 
 use self::datatypes::market::Market;
+use self::storage::Storage;
 
 
 pub struct State {
     pub dbn_client: HistoricalClient,
     pub market: Market,
     pub mbo_messages: Vec<MboMsg>,
+    pub storage: Storage,
 }
 impl State {
     #[tracing::instrument]
@@ -32,13 +35,22 @@ impl State {
                 .context("...while building DBN client")?
         };
 
+        // Initialize SQLite storage
+        let storage = {
+            let db_path = std::env::var("DB_PATH")
+                .unwrap_or("mbo_data.db".to_string());
+            
+            Storage::new(db_path)
+                .context("...while initializing SQLite storage")?
+        };
+
         // Build the market from a DBN file path specified
         let (market, mbo_messages) = {
             let dbn_file_path_st = std::env::var("DBN_FILE_PATH")
                 .unwrap_or("assets/CLX5_mbo.dbn".to_string());
             let path = Path::new(&dbn_file_path_st);
 
-            Market::load_from_path_with_messages(path)
+            Market::load_from_path_with_messages(path, Some(&storage))
                 .context("...while loading market from DBN file")?
         };
 
@@ -46,6 +58,7 @@ impl State {
             dbn_client,
             market,
             mbo_messages,
+            storage,
         })
     }
 }

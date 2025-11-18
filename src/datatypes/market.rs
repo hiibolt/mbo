@@ -11,6 +11,7 @@ use anyhow::{Context, Result, ensure};
 use serde::Serialize;
 use tracing::info;
 use std::path::Path;
+use crate::storage::Storage;
 
 #[derive(Debug, Default, Serialize)]
 pub struct Market {
@@ -27,8 +28,11 @@ impl Market {
     }
 
     /// Load market state from DBN file and return both the market and all MBO messages
+    /// 
+    /// Optionally persists messages to storage if provided.
     pub fn load_from_path_with_messages(
         path: &Path,
+        storage: Option<&Storage>,
     ) -> Result<(Self, Vec<MboMsg>)> {
         // First, check that the file exists - `Decoder::from_file`
         //  already does, but the error message isn't helpful at all
@@ -41,9 +45,26 @@ impl Market {
         let symbol_map = dbn_decoder.metadata().symbol_map()?;
 
         info!("File loaded, beginning to process MBO messages...");
+        
+        // Batch size for database inserts
+        const BATCH_SIZE: usize = 1000;
+        let mut batch = Vec::with_capacity(BATCH_SIZE);
+        
         while let Some(mbo_msg) = dbn_decoder.decode_record::<MboMsg>().context("...while trying to decode record")? {
             // Store the message for TCP streaming
             mbo_messages.push(mbo_msg.clone());
+            
+            // Add to batch for persistence
+            if let Some(storage) = storage {
+                batch.push(mbo_msg.clone());
+                
+                // Persist batch when it reaches batch size
+                if batch.len() >= BATCH_SIZE {
+                    storage.insert_mbo_batch(&batch)
+                        .context("...while persisting MBO message batch")?;
+                    batch.clear();
+                }
+            }
             
             market.apply(mbo_msg.clone())
                 .context("...while trying to apply MBO message to market")?;
@@ -64,6 +85,19 @@ impl Market {
                 );
             }
         }
+        
+        // Persist any remaining messages in the batch
+        if let Some(storage) = storage {
+            if !batch.is_empty() {
+                storage.insert_mbo_batch(&batch)
+                    .context("...while persisting final MBO message batch")?;
+            }
+            
+            let total_count = storage.count_messages()
+                .context("...while counting persisted messages")?;
+            info!("Persisted {} total messages to database", total_count);
+        }
+        
         info!("Finished processing DBN file. Loaded {} MBO messages.", mbo_messages.len());
     
         Ok((market, mbo_messages))

@@ -1,3 +1,12 @@
+# Ignore environment files
 .envrc
-/target
 /.direnv
+.env
+
+# Build artifacts
+/target
+
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal
