@@ -1,0 +1,23 @@
+# Prometheus configuration for MBO monitoring
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'mbo-local'
+    environment: 'development'
+
+# Scrape configurations
+scrape_configs:
+  # MBO Backend metrics (through reverse proxy)
+  - job_name: 'mbo-backend'
+    static_configs:
+      - targets: ['mbo-reverse-proxy:80']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+    scrape_timeout: 3s
+    
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 10s

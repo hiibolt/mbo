@@ -1,6 +1,7 @@
 mod datatypes;
 mod api;
 mod storage;
+mod metrics;
 
 use std::{path::Path, sync::Arc, time::Duration};
 
@@ -11,6 +12,7 @@ use tracing::info;
 
 use self::datatypes::market::Market;
 use self::storage::Storage;
+use self::metrics::Metrics;
 
 
 pub struct State {
@@ -18,6 +20,7 @@ pub struct State {
     pub market: Market,
     pub mbo_messages: Vec<MboMsg>,
     pub storage: Storage,
+    pub metrics: Arc<Metrics>,
 }
 impl State {
     #[tracing::instrument]
@@ -54,11 +57,16 @@ impl State {
                 .context("...while loading market from DBN file")?
         };
 
+        // Initialize metrics
+        let metrics = Metrics::new()
+            .context("...while initializing metrics")?;
+
         Ok(Self {
             dbn_client,
             market,
             mbo_messages,
             storage,
+            metrics,
         })
     }
 }

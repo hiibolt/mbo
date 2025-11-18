@@ -1,7 +1,7 @@
 pub mod market;
 pub mod mbo;
 
-use axum::{Router, routing::get, Json, response::Html};
+use axum::{Router, routing::get, Json, response::Html, http::StatusCode};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::State;
@@ -60,14 +60,40 @@ async fn swagger_ui() -> Html<&'static str> {
 </html>"#)
 }
 
+/// Health check endpoint - returns 200 OK if service is running
+async fn health_check() -> StatusCode {
+    StatusCode::OK
+}
+
+/// Readiness check endpoint - verifies all dependencies are ready
+async fn ready_check(axum::extract::State(state): axum::extract::State<Arc<RwLock<State>>>) -> StatusCode {
+    // Check if we can read state (simple readiness check)
+    let _ = state.read().await;
+    StatusCode::OK
+}
+
+/// Prometheus metrics endpoint
+async fn metrics_handler(
+    axum::extract::State(state): axum::extract::State<Arc<RwLock<State>>>
+) -> Result<(StatusCode, String), (StatusCode, String)> {
+    let state = state.read().await;
+    state.metrics.encode()
+        .map(|bytes| (StatusCode::OK, String::from_utf8_lossy(&bytes).to_string()))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to encode metrics: {}", e)))
+}
+
 pub fn router(state: Arc<RwLock<State>>) -> Router {
     let api_router = Router::new()
         .route("/market/export", get(market::export::handler))
         .route("/mbo/stream/json", get(mbo::stream::json::handler))
-        .with_state(state);
+        .with_state(Arc::clone(&state));
 
     Router::new()
         .route("/openapi.json", get(openapi_json))
         .route("/", get(swagger_ui))
+        .route("/health", get(health_check))
+        .route("/ready", get(ready_check))
+        .route("/metrics", get(metrics_handler))
         .nest("/api", api_router)
+        .with_state(state)
 }
