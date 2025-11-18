@@ -158,7 +158,7 @@ impl Book {
     fn match_crossed_orders(&mut self) -> Result<()> {
         loop {
             // Get best bid and ask
-            let best_bid_price = self.bids.keys().rev().next().copied();
+            let best_bid_price = self.bids.keys().next_back().copied();
             let best_ask_price = self.offers.keys().next().copied();
             
             match (best_bid_price, best_ask_price) {
@@ -628,7 +628,6 @@ mod tests {
                     
                     // Continue processing to see if it self-corrects
                     println!("\nChecking next {} messages to see if it clears...", check_window);
-                    let start_msg = processed;
                     for i in 1..=check_window {
                         if let Some(next_msg) = decoder.decode_record::<MboMsg>()? {
                             book.apply(next_msg.clone())?;
