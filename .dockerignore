@@ -1,0 +1,39 @@
+# Ignore build artifacts in both projects
+mbo-backend/target/
+mbo-frontend/node_modules/
+mbo-frontend/.svelte-kit/
+mbo-frontend/build/
+
+# Git files
+.git/
+.gitignore
+.github/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.envrc
+.direnv/
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Documentation (not needed in container)
+*.md
+!mbo-backend/README.md
+!mbo-frontend/README.md
+
+# Nix files (not used in Docker builds)
+flake.nix
+flake.lock
+.envrc
+
+# Test output
+target/flycheck*/

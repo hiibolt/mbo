@@ -16,6 +16,7 @@ I started with **Order Book Reconstruction** to gain a better understanding of h
     - 8.3. Tailwind needs no introduction. Lightweight, minimal, and LLMs are great at quickly iterating quality CSS - Tailwind training data is vastly better than raw CSS training data.
     - 8.4. Skeleton is commonly used for pages like this, and Opus recommended it during brainstorming, so I viewed the docs and quickly agreed.
 - 9. (PE) **Testing** - Approx 15m to develop, verify, and implement a series of tests based on the provided file. I chose to use the standard `cargo` testing suite because it's what I'm most familiar with. There are more comprehensive suites that can test both the frontend/backend simultaneously, but I was planning to use GitHub Actions to test seperately, since you get a pretty nice dopamine hit from seeing that `X/X` with a checkmark on the GitHub UI.
+- 10. (CR, PE) **Deployment**, **Reproducible Builds**, **Multi-Environment Setup** - I decided to use GitHub Actions for builds and CI/CD. Since this is a Nix-based project, it could have also been possible to do with the Hydra build system, but that has a lengthy drop-in time. I chose to use Docker for containerization, it's standard and I know it well. I contracted Opus to build 
 
 ## AI Usage
 I used Claude Opus 4.1 for dense, difficult tasks requiring heavy verification and Claude Sonnet 4.5 for less intense tasks such as test verification, by-line documentation, and rapid templating.
@@ -30,3 +31,7 @@ List of usage:
     - Required following AI cursor and inspecting all changes to verify there's no secret leakage
 - Frontend Templating with Skeleton and Tailwind
     - I carefully watched it design the frontend structure and gave feedback to progress it to a visually appealing end result.
+- Docker Compose
+    - I don't use Docker Compose anymore, opting for the more enterprise-ready solution of Kubernetes.
+    - I really like K8s, it's simple, fast, and reliable.
+    - Writing `.dockerignore` files, an otherwise tedious task

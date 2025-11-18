@@ -1,67 +1,53 @@
-# Multi-stage build for MBO Backend using Nix
-# Stage 1: Build with Nix
-FROM nixos/nix:latest AS builder
+# Multi-stage build using Rust 1.91 (supports edition2024)
+FROM rust:1.84-bookworm AS builder
 
-# Enable flakes and other experimental features
-RUN echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf
+# Install Rust 1.91
+RUN rustup install 1.91 && rustup default 1.91
 
-# Set working directory
 WORKDIR /build
 
-# Copy flake files first for better caching
-COPY flake.nix flake.lock ./
+# Copy everything needed for the build
+COPY mbo-backend ./
 
-# Copy the backend source
-COPY mbo-backend ./mbo-backend
+# Build the application in release mode
+RUN cargo build --release
 
-# Build the backend using Nix
-RUN nix build .#backend --print-build-logs
-
-# Create output directory and copy binary
-RUN mkdir -p /output && \
-    cp -L result/bin/mbo /output/mbo
-
-# Stage 2: Minimal runtime image
+# Runtime stage with minimal Debian base
 FROM debian:bookworm-slim
 
 # Install runtime dependencies
 RUN apt-get update && \
-    apt-get install -y \
-    ca-certificates \
+    apt-get install -y --no-install-recommends \
     libssl3 \
+    ca-certificates \
     sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Create app user
-RUN useradd -m -u 1000 app
+# Create non-root user
+RUN useradd -m -u 1000 -s /bin/bash app
 
-# Set working directory
 WORKDIR /app
 
-# Copy binary from builder
-COPY --from=builder /output/mbo /app/mbo
+# Copy the built binary from the builder
+COPY --from=builder /build/target/release/mbo /app/mbo
 
-# Copy assets (DBN file)
+# Copy assets
 COPY mbo-backend/assets /app/assets
 
 # Create data directory for SQLite
-RUN mkdir -p /app/data && chown -R app:app /app
+RUN mkdir -p /app/data && chown app:app /app/data
 
-# Switch to app user
 USER app
 
-# Expose port
+# Set default environment variables
+ENV BIND_ADDRESS=0.0.0.0:3000
+ENV DB_PATH=/app/data/mbo.db
+ENV DBN_FILE_PATH=/app/assets/CLX5_mbo.dbn
+ENV RUST_LOG=info
+
 EXPOSE 3000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD ["/app/mbo", "--version"] || exit 1
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 CMD ["/app/mbo", "--version"]
 
-# Set default environment variables
-ENV BIND_ADDRESS=0.0.0.0:3000 \
-    DB_PATH=/app/data/mbo_data.db \
-    DBN_FILE_PATH=/app/assets/CLX5_mbo.dbn \
-    RUST_LOG=info
-
-# Run the application
 CMD ["/app/mbo"]
