@@ -1,5 +1,5 @@
 ## Steps Chosen
-I chose to do all four major targets and all engineering requirements, I had nothing better to do tonight.
+I chose to do all four major targets and all engineering requirements, I had nothing better to do with my day and figured I'd enjoy the rare challenge.
 
 I started with **Order Book Reconstruction** to gain a better understanding of how the library worked, as it looked to be the most difficult comparatively. I was correct in this thought, and succeeded as a result. **CR** = Core Requirement, **PE** = Production Requirement, **SI** = Self-Imposed
 - 1. (SI) **Boilerplate**: Approx. 5-10m to select a stack and solid dependency foundation.
@@ -22,10 +22,14 @@ I started with **Order Book Reconstruction** to gain a better understanding of h
     - 10.3. I chose to split the Docker Compose into base/prod/dev, although Compose has mostly been superceded by K8s, it's a nod to homelabbers who enjoy its simplicity.
 - 11. (PE) **Observability**: I decided to set up a full-blown Prometheus + Grafana dashboard. Usually, this is major overkill, but I've deployed it for so many work, research, and personal projects at this point that it's become a bit trivial.
     - 11.1. Prometheus is undeniably one the best tools for the job. I selected it for its wide-spread usage, ease of setup (past the initial learning curve), and great integration with Rust via the `prometheus` crate.
-- 12. (PE) **API Reliability**, **Performance Optimization**, **Resilience Testing** - Approx. 1hr30m I put everything I'd built in previous steps to the test with this task.
+- 12. (PE) **API Reliability**, **Performance Optimization**, **Resilience Testing** - Approx. 2hrs, I put everything I'd built in previous steps to the test with this task.
     - 12.1. The test works, but run at your own risk.
     - 12.2. Great success! Exteremly performant, even with terrible specs (2vCPUs, 2GB RAM)
     - 12.3. There were a huge number of tweaks that I made to push performances to its limits, which ended up being the bulk of my time.
+    - 12.4. My major limiting factor ended up being unable to properly stress test because the number of open connections was hitting Linux fork usage caps - the backend never once went down during this.
+- 13. (SI) **Final Testing** - Approx. 1hr, as I grappled with learning about crossed markets to try and undestand how a negative spread could make sense in this context.
+    - 13.1. My initial thoughts all the way back at the start were to accept a negative spread, but I decided that conflicts with the idempotency ask of #16.
+    - 13.2. I changed my approach, and modified the `Book`keeping implementation that `databento` provided. In a real situation, I would immediately consult others for advice and wait to proceed for solid information.
 
 ## AI Usage
 I used Claude Opus 4.1 for dense, difficult tasks requiring heavy verification and Claude Sonnet 4.5 for less intense tasks such as test verification, by-line documentation, and rapid templating.
