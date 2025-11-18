@@ -7,10 +7,72 @@
 	function handleSpeedChange() {
 		marketPlayer.setPlaybackSpeed(playbackSpeed);
 	}
+	// Download JSON export
+	export async function downloadJSON() {
+		try {
+			const response = await fetch('/api/market/export');
+
+			if (!response.ok) {
+				throw new Error(`HTTP ${response.status}`);
+			}
+
+			const filename = `market_export_${new Date().toISOString()}.zip`;
+
+			// If the browser supports streaming:
+			if (response.body) {
+				// Create a stream that pulls from the network and pushes into a Blob
+				const reader = response.body.getReader();
+				const chunks: Uint8Array[] = [];
+
+				// Stream the data manually
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					chunks.push(value);
+				}
+
+				// Build a blob the browser can download
+				const blob = new Blob(chunks, { type: 'application/zip' });
+				const url = URL.createObjectURL(blob);
+
+				const a = document.createElement('a');
+				a.href = url;
+				a.download = filename;
+				document.body.appendChild(a);
+				a.click();
+				document.body.removeChild(a);
+				URL.revokeObjectURL(url);
+				return;
+			}
+
+			// Fallback for ancient browsers
+			const blob = await response.blob();
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = filename;
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+
+		} catch (err) {
+			console.error("Download failed:", (err as Error).message);
+		}
+	}
 </script>
 
 <div class="card p-4 space-y-4">
 	<div class="flex items-center justify-between gap-4">
+		<!-- Download JSON Export -->
+		<button
+			class="px-5 py-2.5 bg-white border-2 border-black text-black hover:bg-gray-50 rounded font-semibold transition-all duration-200"
+			on:click={downloadJSON}
+			title="Download full market data as JSON"
+		>
+			JSON
+		</button>
+
 		<!-- Jump to Start -->
 		<button
 			class="btn btn-sm variant-filled-surface"

@@ -8,7 +8,8 @@ use std::{path::Path, sync::Arc, time::Duration};
 use databento::HistoricalClient;
 use anyhow::{Result, Context};
 use tokio::sync::RwLock;
-use tracing::info;
+use tracing::{info, warn};
+use std::io::Write;
 
 use crate::datatypes::market::{MarketSnapshot, load_market_snapshots};
 
@@ -56,6 +57,71 @@ impl State {
             load_market_snapshots(path, Some(&storage))
                 .context("...while loading market from DBN file")?
         };
+
+        // Write each snapshot to `assets/snapshots/<index>.json`
+        std::fs::create_dir_all("assets/snapshots")
+            .context("...while creating snapshots directory")?;
+        for (i, snapshot) in market_snapshots.iter().enumerate() {
+            let snapshot_path = Path::new("assets/snapshots")
+                .join(format!("snapshot_{}.json", i));
+
+            // Check that the file doesn't already exist
+            if snapshot_path.exists() {
+                info!("Snapshot file {:?} already exists, skipping write", snapshot_path);
+                continue;
+            }
+            
+            // Serialize to JSON
+            let snapshot_json = serde_json::to_string(&snapshot)
+                .context("...while serializing snapshot to JSON")?;
+
+            // Write to file
+            std::fs::write(&snapshot_path, snapshot_json)
+                .context(format!("...while writing snapshot to {:?}", snapshot_path))?;
+
+            warn!("First generation of snapshot {} to {:?}", i, snapshot_path);
+        }
+
+        // Zip the entire thing into `assets/feed.zip`
+        {
+            let zip_path = Path::new("assets/feed.zip");
+            // Check that the zip file doesn't already exist
+            if !zip_path.exists() {
+                info!("ZIP file {:?} already exists, skipping creation", zip_path);
+
+                let file = std::fs::File::create(&zip_path)
+                    .context("...while creating zip file")?;
+                let mut zip = zip::ZipWriter::new(file);
+
+                let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default()
+                    .compression_method(zip::CompressionMethod::Stored)
+                    .unix_permissions(0o644);
+
+                for entry in std::fs::read_dir("assets/snapshots")
+                    .context("...while reading snapshots directory")? 
+                {
+                    let entry = entry.context("...while reading snapshot entry")?;
+                    let path = entry.path();
+                    if path.is_file() {
+                        let name = path.file_name()
+                            .and_then(|n| n.to_str())
+                            .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?;
+                        
+                        zip.start_file(name, options)
+                            .context("...while adding file to zip")?;
+                        
+                        let data = std::fs::read(&path)
+                            .context("...while reading snapshot file for zipping")?;
+                        
+                        zip.write_all(&data)
+                            .context("...while writing file data to zip")?;
+                    }
+                }
+
+                zip.finish()
+                    .context("...while finalizing zip file")?;
+            }
+        }
 
         // Initialize metrics
         let metrics = Metrics::new()

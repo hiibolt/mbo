@@ -1,38 +1,44 @@
 use axum::{
-    extract::State,
-    Json,
+    body::Body,
+    http::{HeaderMap, HeaderValue},
+    response::IntoResponse,
 };
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio_util::io::ReaderStream;
 use tracing::instrument;
 
-/// Export complete market state as JSON
-///
-/// Returns the entire order book state including all price levels,
-/// orders, and market data for all instruments and publishers.
+/// Export complete market state as a ZIP, loading from `assets/feed.zip`
+/// 
+/// This file is pre-made, this route does not generate it on-the-fly.
 #[utoipa::path(
     get,
-    path = "/api/market/export/{delay_ms}",
+    path = "/api/market/export",
     responses(
-        (status = 200, description = "Market state exported successfully", body = serde_json::Value),
-        (status = 500, description = "Failed to serialize market state")
+        (status = 200, description = "Market state exported successfully (ZIP stream)", body = Vec<u8>),
+        (status = 500, description = "Failed to stream market state")
     ),
     tag = "market"
 )]
-#[instrument(skip(state))]
-pub async fn handler(
-    State(state): State<Arc<RwLock<crate::State>>>,
-) -> Json<serde_json::Value> {
-    let state = state.read().await;
-    
-    // Serialize the market to JSON
-    match serde_json::to_value(&state.market_snapshots) {
-        Ok(json) => Json(json),
+#[instrument]
+pub async fn handler( ) -> impl IntoResponse {
+    let file = tokio::fs::File::open("assets/feed.zip").await;
+
+    match file {
+        Ok(file) => {
+            let stream = ReaderStream::new(file);
+            let body = Body::from_stream(stream);
+
+            let mut headers = HeaderMap::new();
+            headers.insert("Content-Type", HeaderValue::from_static("application/zip"));
+            headers.insert("Content-Disposition", HeaderValue::from_static("attachment; filename=\"market_export.zip\""));
+
+            (headers, body)
+        }
         Err(e) => {
-            tracing::error!("Failed to serialize market: {}", e);
-            Json(serde_json::json!({
-                "error": "Failed to serialize market state"
-            }))
+            tracing::error!("Failed to open market export ZIP file: {}", e);
+            (
+                HeaderMap::new(),
+                Body::from("Failed to stream market state"),
+            )
         }
     }
 }

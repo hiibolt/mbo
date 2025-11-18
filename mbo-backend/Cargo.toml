@@ -28,3 +28,9 @@ utoipa = { version = "5" }
 
 # Metrics
 prometheus = "0.13"
+tokio-util = "0.7.17"
+tokio-stream = "0.1.17"
+bytes = "1.11.0"
+async_zip = { version = "0.0.16", features = ["tokio"] }
+http-body-util = "0.1"
+zip = "6.0.0"
