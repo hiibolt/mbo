@@ -1,0 +1,28 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+target/
+*.db
+*.db-shm
+*.db-wal
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.envrc
+.direnv/
+
+# Documentation
+*.md
+TESTING.md
+STATUS.md
+
+# Frontend
+mbo-frontend/
