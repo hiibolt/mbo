@@ -19,6 +19,7 @@ struct Config {
     dbn_client: HistoricalClient,
 }
 impl Config {
+    #[tracing::instrument]
     fn from_env() -> Result<Self> {
         let dbn_api_key = std::env::var("DBN_KEY")
             .context("DBN_KEY environment variable not set")?;
@@ -74,17 +75,14 @@ async fn main() -> Result<()> {
                 .context("...while trying to get symbol for MBO message")?;
             let (best_bid, best_offer) = market.aggregated_bbo(mbo_msg.hd.instrument_id);
             
-            println!("{symbol} Aggregated BBO | {}", mbo_msg.ts_recv().context("...while trying to get ts_recv")?);
-            if let Some(best_offer) = best_offer {
-                println!("    {best_offer}");
-            } else {
-                println!("    None");
-            }
-            if let Some(best_bid) = best_bid {
-                println!("    {best_bid}");
-            } else {
-                println!("    None");
-            }
+            let ts_recv = mbo_msg.ts_recv().context("...while trying to get ts_recv")?;
+            info!(
+                symbol = %symbol,
+                timestamp = %ts_recv,
+                best_bid = ?best_bid,
+                best_offer = ?best_offer,
+                "Aggregated BBO update"
+            );
         }
     }
 

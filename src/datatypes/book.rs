@@ -7,7 +7,8 @@ use databento::{
         UNDEF_PRICE,
     },
 };
-use anyhow::{Result, Context, bail};
+use anyhow::{Result, Context, bail, ensure};
+use tracing::{info, warn};
 
 #[derive(Debug, Default)]
 pub struct Book {
@@ -90,14 +91,23 @@ impl Book {
             .collect()
     }
 
+    #[tracing::instrument(skip(self), fields(order_id = mbo.order_id, action = ?mbo.action()))]
     pub fn apply(&mut self, mbo: MboMsg) -> Result<()> {
         let action = mbo.action()
             .context("MBO message has no valid action")?;
         match action {
-            Action::Modify => self.modify(mbo)?,
+            Action::Modify => {
+                if let Some(()) = self.modify(mbo.clone())? {
+                    warn!("Skipped Modify for pre-snapshot order ID {}", mbo.order_id);
+                }
+            }
             Action::Trade | Action::Fill | Action::None => {}
-            Action::Cancel => self.cancel(mbo)?,
-            Action::Add => self.add(mbo)?,
+            Action::Cancel => {
+                if let Some(()) = self.cancel(mbo.clone())? {
+                    warn!("Skipped Cancel for pre-snapshot order ID {}", mbo.order_id);
+                }
+            }
+            Action::Add => { self.add(mbo)?; }
             Action::Clear => self.clear(),
         }
         Ok(())
@@ -109,6 +119,7 @@ impl Book {
         self.bids.clear();
     }
 
+    #[tracing::instrument(skip(self), fields(order_id = mbo.order_id, price = mbo.price, size = mbo.size))]
     fn add(&mut self, mbo: MboMsg) -> Result<()> {
         let price = mbo.price;
         let side = mbo.side()
@@ -122,26 +133,42 @@ impl Book {
                 levels.insert(price, VecDeque::from([mbo]));
             }
         } else {
-            assert_ne!(price, UNDEF_PRICE);
-            assert!(self
-                .orders_by_id
-                .insert(mbo.order_id, (side, price))
-                .is_none());
+            ensure!(price != UNDEF_PRICE, "Price cannot be UNDEF_PRICE for non-TOB add");
+            ensure!(
+                self.orders_by_id.insert(mbo.order_id, (side, price)).is_none(),
+                "Duplicate order ID {} - order already exists in book",
+                mbo.order_id
+            );
             let level: &mut Level = self.get_or_insert_level(side, price)?;
             level.push_back(mbo);
         }
         Ok(())
     }
 
-    fn cancel(&mut self, mbo: MboMsg) -> Result<()> {
+    #[tracing::instrument(skip(self), fields(order_id = mbo.order_id, price = mbo.price, size = mbo.size))]
+    fn cancel(&mut self, mbo: MboMsg) -> Result<Option<()>> {
         let side = mbo.side()
             .context("MBO message has no valid side")?;
-        let level = self.level_mut(side, mbo.price)?;
-        let order_idx = Self::find_order(level, mbo.order_id)
-            .context("...while finding order in level")?;
+        
+        // If the level doesn't exist, this cancel is for an order we never saw (pre-snapshot)
+        let Ok(level) = self.level_mut(side, mbo.price) else {
+            return Ok(Some(())); // Skip - order was added before our data started
+        };
+        
+        // If the order isn't in the level, skip it (pre-snapshot order)
+        let Ok(order_idx) = Self::find_order(level, mbo.order_id) else {
+            return Ok(Some(())); // Skip
+        };
+        
         let existing_order = level.get_mut(order_idx)
             .context("Order index out of bounds")?;
-        assert!(existing_order.size >= mbo.size);
+        ensure!(
+            existing_order.size >= mbo.size,
+            "Cancel size {} exceeds existing order size {} for order ID {}",
+            mbo.size,
+            existing_order.size,
+            mbo.order_id
+        );
         existing_order.size -= mbo.size;
         if existing_order.size == 0 {
             level.remove(order_idx)
@@ -149,19 +176,20 @@ impl Book {
             if level.is_empty() {
                 self.remove_level(side, mbo.price)?;
             }
-            self.orders_by_id.remove(&mbo.order_id)
-                .context("Order ID not found in orders_by_id map")?;
+            self.orders_by_id.remove(&mbo.order_id);
         }
-        Ok(())
+        Ok(None)
     }
 
-    fn modify(&mut self, mbo: MboMsg) -> Result<()> {
+    #[tracing::instrument(skip(self), fields(order_id = mbo.order_id, price = mbo.price, size = mbo.size))]
+    fn modify(&mut self, mbo: MboMsg) -> Result<Option<()>> {
         let order_id = mbo.order_id;
         let side = mbo.side()
             .context("MBO message has no valid side")?;
         let Some((id_side, id_price)) = self.orders_by_id.get_mut(&order_id) else {
-            // If order not found, treat it as an add
-            return self.add(mbo);
+            // If order not found, skip (pre-snapshot order)
+            // We don't treat it as an add because we don't know its history
+            return Ok(Some(()));
         };
         let prev_side = *id_side;
         let prev_price = *id_price;
@@ -177,7 +205,7 @@ impl Book {
         existing_order.size = mbo.size;
         let should_keep_priority = prev_price == mbo.price && existing_order.size >= mbo.size;
         if should_keep_priority {
-            return Ok(());
+            return Ok(None);
         }
         if prev_price != mbo.price {
             let prev_level = level;
@@ -191,7 +219,7 @@ impl Book {
             Self::remove_order(level, order_id)?;
             level.push_back(mbo);
         }
-        Ok(())
+        Ok(None)
     }
 
     fn get_or_insert_level(&mut self, side: Side, price: i64) -> Result<&mut Level> {

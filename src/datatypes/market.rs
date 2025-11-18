@@ -43,6 +43,7 @@ impl Market {
             .unwrap_or_default()
     }
 
+    #[tracing::instrument(skip(self))]
     pub fn aggregated_bbo(&self, instrument_id: u32) -> (Option<PriceLevel>, Option<PriceLevel>) {
         let mut agg_bid = None;
         let mut agg_ask = None;
@@ -77,6 +78,7 @@ impl Market {
         (agg_bid, agg_ask)
     }
 
+    #[tracing::instrument(skip(self), fields(instrument_id = mbo.hd.instrument_id, order_id = mbo.order_id))]
     pub fn apply(&mut self, mbo: MboMsg) -> Result<()> {
         let publisher = mbo.publisher()
             .context("MBO message has no valid publisher")?;
@@ -88,8 +90,9 @@ impl Market {
             book
         } else {
             books.push((publisher, Book::default()));
-            &mut books.last_mut()
-                .context("Books vector is empty after push")?
+            &mut books
+                .last_mut()
+                .context("Books vector is unexpectedly empty after push")?
                 .1
         };
         book.apply(mbo)
