@@ -13,6 +13,11 @@ use tracing::info;
 use std::path::Path;
 use crate::{datatypes::book::BookEffect, storage::Storage};
 
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct MBOMsgEffect {
+    pub mbo_msg: MboMsg,
+    pub market_effect: MarketEffect,
+}
 #[derive(Debug, Clone, Serialize)]
 pub struct MarketEffect {
     pub publisher_created: Option<Publisher>,
@@ -84,8 +89,10 @@ pub fn load_market_snapshots(
         // Capture market snapshot after applying the MBO message
         snapshots.push(MarketSnapshot {
             market: market.clone(),
-            market_effect: market_effect,
-            applied_mbo_msg: mbo_msg.clone(),
+            mbomsg_effect: MBOMsgEffect {
+                mbo_msg: mbo_msg.clone(),
+                market_effect,
+            },
         });
 
         // If it's the last update in an event, print the state of the aggregated book
@@ -124,9 +131,8 @@ pub fn load_market_snapshots(
 
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct MarketSnapshot {
-    market: Market,
-    market_effect: MarketEffect,
-    applied_mbo_msg: MboMsg
+    pub market: Market,
+    pub mbomsg_effect: MBOMsgEffect,
 }
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct Market {
