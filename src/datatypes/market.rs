@@ -2,11 +2,15 @@ use std::collections::HashMap;
 use super::{price_level::PriceLevel, book::Book};
 use databento::{
     dbn::{
-        MboMsg, Publisher, Record
+        MboMsg, Publisher, Record,
+        decode::{DecodeRecord, dbn::Decoder, DbnMetadata},
+        SymbolIndex
     }
 };
-use anyhow::{Result, Context};
+use anyhow::{Context, Result, ensure};
 use serde::Serialize;
+use tracing::info;
+use std::path::Path;
 
 #[derive(Debug, Default, Serialize)]
 pub struct Market {
@@ -15,6 +19,54 @@ pub struct Market {
 impl Market {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Get the count of instruments in the market
+    pub fn instrument_count(&self) -> usize {
+        self.books.len()
+    }
+
+    /// Load market state from DBN file and return both the market and all MBO messages
+    pub fn load_from_path_with_messages(
+        path: &Path,
+    ) -> Result<(Self, Vec<MboMsg>)> {
+        // First, check that the file exists - `Decoder::from_file`
+        //  already does, but the error message isn't helpful at all
+        ensure!(path.exists(), "Input file does not exist at path: `{:?}`", path);
+
+        let mut dbn_decoder = Decoder::from_file(path)
+            .context("...while trying to open decoder on file")?;
+        let mut market = Market::new();
+        let mut mbo_messages = Vec::new();
+        let symbol_map = dbn_decoder.metadata().symbol_map()?;
+
+        info!("File loaded, beginning to process MBO messages...");
+        while let Some(mbo_msg) = dbn_decoder.decode_record::<MboMsg>().context("...while trying to decode record")? {
+            // Store the message for TCP streaming
+            mbo_messages.push(mbo_msg.clone());
+            
+            market.apply(mbo_msg.clone())
+                .context("...while trying to apply MBO message to market")?;
+
+            // If it's the last update in an event, print the state of the aggregated book
+            if mbo_msg.flags.is_last() {
+                let symbol = symbol_map.get_for_rec(mbo_msg)
+                    .context("...while trying to get symbol for MBO message")?;
+                let (best_bid, best_offer) = market.aggregated_bbo(mbo_msg.hd.instrument_id);
+                
+                let ts_recv = mbo_msg.ts_recv().context("...while trying to get ts_recv")?;
+                info!(
+                    symbol = %symbol,
+                    timestamp = %ts_recv,
+                    best_bid = ?best_bid,
+                    best_offer = ?best_offer,
+                    "Aggregated BBO update"
+                );
+            }
+        }
+        info!("Finished processing DBN file. Loaded {} MBO messages.", mbo_messages.len());
+    
+        Ok((market, mbo_messages))
     }
 
     pub fn books_by_pub(&self, instrument_id: u32) -> Option<&[(Publisher, Book)]> {

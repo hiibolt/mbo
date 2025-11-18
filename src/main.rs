@@ -1,37 +1,51 @@
 mod datatypes;
+mod api;
 
-use std::path::Path;
+use std::{path::Path, sync::Arc, time::Duration};
 
-use databento::{
-    dbn::{
-        decode::{DecodeRecord, dbn::Decoder, DbnMetadata},
-        MboMsg, SymbolIndex
-    },
-    HistoricalClient,
-};
-use anyhow::{Result, Context, ensure};
+use databento::{HistoricalClient, dbn::MboMsg};
+use anyhow::{Result, Context};
+use tokio::sync::RwLock;
 use tracing::info;
 
 use self::datatypes::market::Market;
 
 
-struct Config {
-    dbn_client: HistoricalClient,
+pub struct State {
+    pub dbn_client: HistoricalClient,
+    pub market: Market,
+    pub mbo_messages: Vec<MboMsg>,
 }
-impl Config {
+impl State {
     #[tracing::instrument]
     fn from_env() -> Result<Self> {
-        let dbn_api_key = std::env::var("DBN_KEY")
-            .context("DBN_KEY environment variable not set")?;
+        // Load DBN API key from environment variable and
+        //  initialize the DBN client
+        let dbn_client = {
+            let dbn_api_key = std::env::var("DBN_KEY")
+                .context("DBN_KEY environment variable not set")?;
 
-        let dbn_client = HistoricalClient::builder()
-            .key(dbn_api_key)
-            .context("...while building DBN client")?
-            .build()
-            .context("...while building DBN client")?;
+            HistoricalClient::builder()
+                .key(dbn_api_key)
+                .context("...while building DBN client")?
+                .build()
+                .context("...while building DBN client")?
+        };
+
+        // Build the market from a DBN file path specified
+        let (market, mbo_messages) = {
+            let dbn_file_path_st = std::env::var("DBN_FILE_PATH")
+                .unwrap_or("assets/CLX5_mbo.dbn".to_string());
+            let path = Path::new(&dbn_file_path_st);
+
+            Market::load_from_path_with_messages(path)
+                .context("...while loading market from DBN file")?
+        };
 
         Ok(Self {
-            dbn_client
+            dbn_client,
+            market,
+            mbo_messages,
         })
     }
 }
@@ -50,43 +64,61 @@ async fn main() -> Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    // Initialize configuration from environment variables
-    let _config = Config::from_env()
-        .context("...while loading configuration from environment")?;
+    // Initialize state from environment variables
+    println!("Loading application state...");
+    let state = Arc::new(RwLock::new(State::from_env()
+        .context("...while loading configuration from environment")?));
+    println!("State loaded successfully!");
 
-    // First, check that the file exists
-    let input_file_path = {
-        let path = Path::new("assets/CLX5_mbo.dbn"); // Linux format is ok, `Path` handles it
-        ensure!(path.exists(), "Input file does not exist at path: `{:?}`", path);
-        path
+    // Build the API router
+    let app = api::router(Arc::clone(&state));
+
+    // Configure the server address
+    let addr = std::env::var("BIND_ADDRESS")
+        .unwrap_or_else(|_| "0.0.0.0:3000".to_string());
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .context(format!("Failed to bind to {}", addr))?;
+
+    // Start the server with graceful shutdown
+    println!("\nStarting server on {}", addr);
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .context("Server error")?;
+
+    println!("Server shut down gracefully");
+    Ok(())
+}
+
+/// Handle graceful shutdown on SIGTERM/SIGINT
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
     };
 
-    let mut dbn_decoder = Decoder::from_file(input_file_path)
-        .context("...while trying to open decoder on file")?;
-    let mut market = Market::new();
-    let symbol_map = dbn_decoder.metadata().symbol_map()?;
-    while let Some(mbo_msg) = dbn_decoder.decode_record::<MboMsg>().context("...while trying to decode record")? {
-        market.apply(mbo_msg.clone())
-            .context("...while trying to apply MBO message to market")?;
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("Failed to install signal handler")
+            .recv()
+            .await;
+    };
 
-        // If it's the last update in an event, print the state of the aggregated book
-        if mbo_msg.flags.is_last() {
-            let symbol = symbol_map.get_for_rec(mbo_msg)
-                .context("...while trying to get symbol for MBO message")?;
-            let (best_bid, best_offer) = market.aggregated_bbo(mbo_msg.hd.instrument_id);
-            
-            let ts_recv = mbo_msg.ts_recv().context("...while trying to get ts_recv")?;
-            info!(
-                symbol = %symbol,
-                timestamp = %ts_recv,
-                best_bid = ?best_bid,
-                best_offer = ?best_offer,
-                "Aggregated BBO update"
-            );
-        }
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            info!("Received Ctrl+C, shutting down gracefully...");
+        },
+        _ = terminate => {
+            info!("Received SIGTERM, shutting down gracefully...");
+        },
     }
-
-    info!("Finished processing DBN file.");
-
-    Ok(())
+    
+    // Give in-flight requests time to complete
+    tokio::time::sleep(Duration::from_secs(1)).await;
 }
