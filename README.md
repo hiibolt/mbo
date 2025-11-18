@@ -13,7 +13,7 @@ I started with **Order Book Reconstruction** to gain a better understanding of h
 - 7. (CR) **Data Storage**: Approx 40m to develop and implement an `SQLite` implementation with `rusqlite`. I wrote the schema with assistance from Opus 4.1, verified by hand, and let Sonnet 4.5 handle the file loading modification to support persistent writes.
 - 8. (PE) **Frontend**: Approx 1hr to build a Svelte, Skeleton, Tailwind, and Bun-based frontend. I use all but Skeleton regularly in personal work, and let Sonnet handle templating the site with Skeleton for sake of rapid iteration. 
     - 8.1. I'm a big fan of Svelte, it's somewhat Rust-like in that it behaves in an opinionated but predictable manner (and has great docs!). One you internalize how development is meant to be done with modern Runes, it's a cinch.
-    - 8.2. Bun is amazing. It's funny, they actually don't have a Bun caching action on GitHub Actions because Bun installs faster than the overhead of launching a GitHub Action, if you want a laugh, take a look at [one of my favorite GitHub replies](https://github.com/oven-sh/setup-bun/issues/14#issuecomment-1714116221).
+    - 8.2. Bun is amazing. It's funny, they actually don't have a Bun caching action on GitHub Actions because Bun installs faster than the overhead of launching a GitHub Action, if you want a laugh, take a look at [one of my favorite GitHub replies](https://github.com/oven-sh/setup-bun/issues/14#issuecomment-1714116221). It also makes using TypeScript extremely easy, which is nice for coordinating types with verification between the frontend and backend.
     - 8.3. Tailwind needs no introduction. Lightweight, minimal, and LLMs are great at quickly iterating quality CSS - Tailwind training data is vastly better than raw CSS training data.
     - 8.4. Skeleton is commonly used for pages like this, and Opus recommended it during brainstorming, so I viewed the docs and quickly agreed.
 
@@ -26,3 +26,5 @@ List of usage:
 - Adding full `tokio_tracing` coverage
     - An otherwise tedious task, made simple with AI!
     - Required following AI cursor and inspecting all changes to verify there's no secret leakage
+- Frontend Templating with Skeleton and Tailwind
+    - I carefully watched it design the frontend structure and gave feedback to progress it to a visually appealing end result.
