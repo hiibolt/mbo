@@ -199,7 +199,7 @@ mod tests {
         // Load market from the real DBN file (without storage to keep test simple)
         let (market, messages) = Market::load_from_path_with_messages(path, None)?;
         
-        assert!(messages.len() > 0, "Should have loaded messages");
+        assert!(!messages.is_empty(), "Should have loaded messages");
         assert!(market.instrument_count() > 0, "Should have at least one instrument");
         
         println!("Loaded {} messages across {} instruments", 

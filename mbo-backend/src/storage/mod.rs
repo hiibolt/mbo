@@ -184,6 +184,7 @@ impl Storage {
     }
 
     #[allow(dead_code)]
+    #[allow(clippy::type_complexity)]
     pub fn get_messages_for_instrument(
         &self,
         instrument_id: u32,
