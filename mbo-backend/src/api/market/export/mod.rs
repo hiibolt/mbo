@@ -20,7 +20,10 @@ use tracing::instrument;
 )]
 #[instrument]
 pub async fn handler( ) -> impl IntoResponse {
-    let file = tokio::fs::File::open("assets/feed.zip").await;
+    let zip_path_str = std::env::var("ZIP_FILE_PATH")
+        .unwrap_or("assets/feed.zip".to_string());
+    let zip_path = std::path::Path::new(&zip_path_str);
+    let file = tokio::fs::File::open(zip_path).await;
 
     match file {
         Ok(file) => {
