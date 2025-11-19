@@ -63,15 +63,16 @@
 </script>
 
 <div class="card p-4 space-y-4">
-	<div class="flex items-center justify-between gap-4">
-		<!-- Download JSON Export -->
-		<button
-			class="px-5 py-2.5 bg-white border-2 border-black text-black hover:bg-gray-50 rounded font-semibold transition-all duration-200"
-			on:click={downloadJSON}
-			title="Download full market data as JSON"
-		>
-			JSON
-		</button>
+   <div class="flex items-center justify-between gap-4">
+	   <!-- Direct Download JSON Export -->
+	   <a
+		   class="px-5 py-2.5 bg-white border-2 border-black text-black hover:bg-gray-50 rounded font-semibold transition-all duration-200"
+		   href="/api/market/export"
+		   download="market_export.zip"
+		   title="Download full market data as JSON"
+	   >
+		   JSON
+	   </a>
 
 		<!-- Jump to Start -->
 		<button
