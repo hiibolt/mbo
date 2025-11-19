@@ -22,7 +22,7 @@
 			if (response.body) {
 				// Create a stream that pulls from the network and pushes into a Blob
 				const reader = response.body.getReader();
-				const chunks: Uint8Array[] = [];
+				const chunks: BlobPart[] = [];
 
 				// Stream the data manually
 				while (true) {
