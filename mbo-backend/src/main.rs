@@ -59,10 +59,12 @@ impl State {
         };
 
         // Write each snapshot to `assets/snapshots/<index>.json`
-        std::fs::create_dir_all("assets/snapshots")
+        let snapshots_dir_path = std::env::var("SNAPSHOTS_FILE_PATH")
+            .unwrap_or("assets/snapshots".to_string());
+        std::fs::create_dir_all(&snapshots_dir_path)
             .context("...while creating snapshots directory")?;
         for (i, snapshot) in market_snapshots.iter().enumerate() {
-            let snapshot_path = Path::new("assets/snapshots")
+            let snapshot_path = Path::new(&snapshots_dir_path)
                 .join(format!("snapshot_{}.json", i));
 
             // Check that the file doesn't already exist
@@ -84,7 +86,9 @@ impl State {
 
         // Zip the entire thing into `assets/feed.zip`
         {
-            let zip_path = Path::new("assets/feed.zip");
+            let zip_path_str = std::env::var("ZIP_FILE_PATH")
+                .unwrap_or("assets/feed.zip".to_string());
+            let zip_path = Path::new(&zip_path_str);
             // Check that the zip file doesn't already exist
             if !zip_path.exists() {
                 info!("ZIP file {:?} already exists, skipping creation", zip_path);
@@ -97,7 +101,7 @@ impl State {
                     .compression_method(zip::CompressionMethod::Stored)
                     .unix_permissions(0o644);
 
-                for entry in std::fs::read_dir("assets/snapshots")
+                for entry in std::fs::read_dir(snapshots_dir_path)
                     .context("...while reading snapshots directory")? 
                 {
                     let entry = entry.context("...while reading snapshot entry")?;
